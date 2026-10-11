@@ -11,8 +11,12 @@ IDs are Tiger Lake `9A40`, `9A49`, `9A78` and Alder Lake-N / Twin Lake
 checks still apply after selection.
 
 Other entries in the table supply identification and display names only. A
-listed ID does not imply an implemented backend or a tested machine. See the
-[compatibility summary](../README.md#compatibility) for the current scope.
+listed ID does not imply an implemented backend or a tested machine. This
+includes Raptor Lake-P (`A7A0`–`A7AD`) and Alder Lake-P (`46A3`, `46A6`, `46A8`,
+`46AA`, `46B3`, `46C3`): both are catalogued for identification and have a
+read-only observer (`-wex-rplp-observe` / `-wex-adlp-observe`), but no GT
+backend. See the [compatibility summary](../README.md#compatibility) for the
+current scope.
 
 ## Advanced override: device-id
 

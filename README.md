@@ -3,25 +3,28 @@
 [日本語](README_ja.md)
 
 A fork of [WhateverXe](https://github.com/b00t0x/WhateverXe) working toward macOS support for Intel
-**Raptor Lake-P** integrated graphics: the UHD and Iris Xe GPUs in 13th-generation Core H, P and U laptop
-processors, including the laptop's internal (eDP) panel.
+**Raptor Lake-P** and **Alder Lake-P** integrated graphics: the UHD and Iris Xe GPUs in 12th- and
+13th-generation Core H, P and U laptop processors, including the laptop's internal (eDP) panel.
 
 > **Status: not a working driver yet.**
-> - Today this fork only adds an opt-in, read-only diagnostic (`-wex-rplp-observe`). It reports the GPU's
->   configuration and the firmware's display state.
-> - Raptor Lake-P GPUs remain unsupported.
+> - Today this fork only adds an opt-in, read-only diagnostic (`-wex-rplp-observe` for Raptor Lake-P,
+>   `-wex-adlp-observe` for Alder Lake-P). It reports the GPU's configuration and the firmware's display
+>   state.
+> - Raptor Lake-P and Alder Lake-P GPUs remain unsupported: both are catalogued (identity and display
+>   names only) but have no GT backend.
 > - Everything upstream supports (Tiger Lake, Alder Lake-N / Twin Lake) behaves exactly as in upstream.
 
 This is an independent hobby fork, not affiliated with the upstream author. Work that holds up on real
 hardware will be offered upstream, so the `rplp-*` branches carry no fork-only changes. `main` adds this
-README on top.
+README and the Alder Lake-P observer on top.
 
 ## Target hardware
 
 | | |
 | --- | --- |
 | GPU family | Raptor Lake-P (Linux i915 `RAPTORLAKE_P` / `RAPTORLAKE_U`). Device IDs `A7A0`, `A7A1`, `A7A8`, `A7A9`, `A7AA`–`A7AD` |
-| Processors | 13th-generation Intel Core **H**, **P** and **U** laptop CPUs, e.g. i7-13620H, i7-1360P, i5-1335U |
+| GPU family | Alder Lake-P (Linux i915 `ALDERLAKE_P`). Device IDs `46A3`, `46A6`, `46A8`, `46AA`, `46B3`, `46C3` |
+| Processors | 12th- and 13th-generation Intel Core **H**, **P** and **U** laptop CPUs, e.g. i7-13620H, i7-1360P, i5-1335U |
 | GPU core | Xe-LP (Gen12), the same architecture as Tiger Lake's Iris Xe. Up to 96 EU depending on the SKU |
 | Display engine | Display version 13 (XE_LPD), the same generation as Alder Lake-N, which upstream already drives |
 | Not targeted | Raptor Lake-S desktop and **HX** laptop CPUs (`A780`–`A78B`). They use display version 12 and need a different path |
@@ -37,6 +40,11 @@ README on top.
 - **Platform.** Big Sur 11.7.11 has to boot on a 13th-generation hybrid CPU first. That is not yet proven on
   the reference machine.
 
+The same applies to Alder Lake-P, which this fork now also catalogues and observes. Its backend would need
+the same kind of per-SKU GT profile (up to 6 DSS / 96 EU on the H-class parts) and eDP work, and its
+revision-4 stepping (GT C0 / display E0) shares the Raptor Lake-P tables. The read-only observer
+(`-wex-adlp-observe`) is the first step toward establishing that data.
+
 ## Plan
 
 Each stage follows upstream's approach: observe first, then qualify, then enable, with CPU tests for
@@ -44,7 +52,7 @@ every hardware rule.
 
 | Stage | Goal | Done when | Status |
 | --- | --- | --- | --- |
-| R1 | Read-only Raptor Lake-P profile: fuses, EU layout and the firmware's display state, with no writes beyond a balanced forcewake | The macOS readout matches a Linux i915 capture from the same machine | Code complete, CI-tested; hardware run pending |
+| R1 | Read-only Raptor Lake-P / Alder Lake-P profile: fuses, EU layout and the firmware's display state, with no writes beyond a balanced forcewake | The macOS readout matches a Linux i915 capture from the same machine | Code complete, CI-tested; hardware run pending |
 | R2 | GT backend: the existing BCS self-test, then the accelerator fixes with this GPU's URB and L3 values | The self-test passes and the accelerator starts on the firmware framebuffer | Not started |
 | R3 | Internal panel, first light: keep the donor's internal-panel connector and adopt the link the firmware trained | Desktop on the internal panel at the firmware mode | Not started |
 | R4 | Internal panel, complete: power sequencing, backlight, blank/unblank, link retraining with ADL-P tables, 144 Hz | Brightness, sleep/wake and the native refresh rate work | Not started |
@@ -52,11 +60,11 @@ every hardware rule.
 
 ## Trying the R1 diagnostic
 
-**What it does.** The diagnostic runs only with `-wex-rplp-observe`, and only on a physical Raptor Lake-P
-GPU.
+**What it does.** The diagnostic runs only with `-wex-rplp-observe` on a physical Raptor Lake-P GPU, or
+`-wex-adlp-observe` on a physical Alder Lake-P GPU.
 - It reads the GPU fuses (slice, DSS, EU, L3, media), the Display 13 boot state, and the eDP-related
   registers (panel power, backlight, DP link, PSR).
-- It publishes them in the IORegistry.
+- It publishes them in the IORegistry (prefixed `RPLP…` or `ADLP…` accordingly).
 - The only register writes are a balanced forcewake request and release, the same handshake upstream uses
   on Alder Lake-N. It does not run if anything already holds forcewake.
 - The GPU stays unsupported.
@@ -75,13 +83,19 @@ needed for this step.
 **Collecting.**
 
 ```sh
+# Raptor Lake-P
 ioreg -lw0 -r -k RPLPObserveVersion > ~/Desktop/rplp-ioreg.txt
 sudo dmesg | grep -E 'RaptorLakeP|WhateverXe' > ~/Desktop/rplp-dmesg.txt
+
+# Alder Lake-P
+ioreg -lw0 -r -k ADLPObserveVersion > ~/Desktop/adlp-ioreg.txt
+sudo dmesg | grep -E 'AlderLakeP|WhateverXe' > ~/Desktop/adlp-dmesg.txt
 ```
 
 **Published properties.**
-- `RPLPGTReadout`, `RPLPDisplay13Boot`, `RPLPEDPBoot`
-- `RPLPPhysicalMemoryLayout`, `RPLPStolenReservation`
+- `RPLPGTReadout`, `RPLPDisplay13Boot`, `RPLPEDPBoot` (Raptor Lake-P)
+- `ADLPGTReadout`, `ADLPDisplay13Boot`, `ADLPEDPBoot` (Alder Lake-P)
+- `RPLPPhysicalMemoryLayout`, `RPLPStolenReservation` / `ADLPPhysicalMemoryLayout`, `ADLPStolenReservation`
 - Physical identity, revision, and the GT and display stepping names
 
 ## Related work (outside this repository)
@@ -121,7 +135,8 @@ The current target is **macOS Big Sur build 20G1443**.
 | Tiger Lake | `9A40`, `9A49`, `9A78` |
 | Alder Lake-N / Twin Lake | `46D0`–`46D4` |
 
-Raptor Lake-P has no backend in this fork yet; see the [plan](#plan) above.
+Raptor Lake-P and Alder Lake-P have no backend in this fork yet; see the [plan](#plan) above. Both are
+catalogued in the device table for identification only, and both have a read-only observer (R1).
 
 Support varies by system and connector layout. The table includes implemented backends, not a guarantee
 for every machine. See [device selection](docs/device-selection.md) for detailed selection conditions and
@@ -207,6 +222,7 @@ No family-selection or per-feature enable arguments are required for Alder Lake-
 | `-wexbeta` | Bypass the plugin's OS-version check. Exact kernel/driver checks still apply. |
 | `-wex-tgl-off` | Disable the Tiger Lake path. |
 | `-wex-rplp-observe` | Raptor Lake-P only: publish the read-only R1 diagnostic described above. The GPU stays unsupported. |
+| `-wex-adlp-observe` | Alder Lake-P only: publish the read-only R1 diagnostic described above. The GPU stays unsupported. |
 
 ### Upstream roadmap
 

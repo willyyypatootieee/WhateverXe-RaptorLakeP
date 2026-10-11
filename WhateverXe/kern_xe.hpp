@@ -64,6 +64,14 @@ public:
 	 */
 	void observeRaptorLakeP(IOPCIDevice *pci);
 
+	/**
+	 *  Publish opt-in read-only evidence for a catalogued ADL-P/ADL-U
+	 *  without a GT backend. Selects no profile, hook or donor state.
+	 *
+	 *  @param pci  published physical GPU
+	 */
+	void observeAlderLakeP(IOPCIDevice *pci);
+
 private:
 	// Do not inline either helper into the small kext-load dispatcher.
 	__attribute__((noinline)) bool processAlderLakeNLoadOnly(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size);

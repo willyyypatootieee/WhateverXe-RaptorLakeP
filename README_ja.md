@@ -2,22 +2,23 @@
 
 [English](README.md)
 
-[WhateverXe](https://github.com/b00t0x/WhateverXe)のforkです。Intel **Raptor Lake-P**内蔵GPUのmacOS対応を目指しています。
-対象は第13世代Core H／P／Uシリーズのノート向けCPUに搭載されたUHD／Iris Xe Graphicsと、ノートPCの内蔵ディスプレイ（eDP）です。
+[WhateverXe](https://github.com/b00t0x/WhateverXe)のforkです。Intel **Raptor Lake-P**および**Alder Lake-P**内蔵GPUのmacOS対応を目指しています。
+対象は第12・13世代Core H／P／Uシリーズのノート向けCPUに搭載されたUHD／Iris Xe Graphicsと、ノートPCの内蔵ディスプレイ（eDP）です。
 
 > **現状：まだ動作するドライバではありません。**
-> - このforkが現在追加しているのは、任意かつ読み取り専用の診断機能（`-wex-rplp-observe`）のみです。GPUの構成とファームウェアの画面状態を報告します。
-> - Raptor Lake-PのGPUは引き続き非対応です。
+> - このforkが現在追加しているのは、任意かつ読み取り専用の診断機能（Raptor Lake-Pは`-wex-rplp-observe`、Alder Lake-Pは`-wex-adlp-observe`）のみです。GPUの構成とファームウェアの画面状態を報告します。
+> - Raptor Lake-PとAlder Lake-PのGPUは引き続き非対応です。どちらもデバイステーブルには識別用として登録されていますが、GTバックエンドはありません。
 > - upstreamが対応する機種（Tiger Lake、Alder Lake-N / Twin Lake）の動作はupstreamと変わりません。
 
-本forkは個人が趣味で運営する独立したforkであり、upstreamの作者とは関係ありません。実機で検証できた成果はupstreamへ提案する予定です。そのため`rplp-*`ブランチにはfork固有の変更を含めず、`main`ではこのREADMEを追加しています。
+本forkは個人が趣味で運営する独立したforkであり、upstreamの作者とは関係ありません。実機で検証できた成果はupstreamへ提案する予定です。そのため`rplp-*`ブランチにはfork固有の変更を含めず、`main`ではこのREADMEとAlder Lake-Pオブザーバを追加しています。
 
 ## 対象ハードウェア
 
 | 項目 | 内容 |
 | --- | --- |
 | GPUファミリー | Raptor Lake-P（Linux i915の`RAPTORLAKE_P`／`RAPTORLAKE_U`）。device IDは`A7A0`、`A7A1`、`A7A8`、`A7A9`、`A7AA`–`A7AD` |
-| CPU | 第13世代Intel Core **H**／**P**／**U**シリーズのノート向けCPU（例：i7-13620H、i7-1360P、i5-1335U） |
+| GPUファミリー | Alder Lake-P（Linux i915の`ALDERLAKE_P`）。device IDは`46A3`、`46A6`、`46A8`、`46AA`、`46B3`、`46C3` |
+| CPU | 第12・13世代Intel Core **H**／**P**／**U**シリーズのノート向けCPU（例：i7-12700H、i7-13620H、i7-1360P、i5-1335U） |
 | GPUコア | Xe-LP（Gen12）。Tiger LakeのIris Xeと同じアーキテクチャ。EU数はSKUにより最大96 |
 | ディスプレイエンジン | Display version 13（XE_LPD）。upstreamが既に駆動しているAlder Lake-Nと同世代 |
 | 対象外 | Raptor Lake-SデスクトップおよびノートPC向け**HX**シリーズ（`A780`–`A78B`）。Display version 12のため別の経路が必要 |
@@ -30,13 +31,15 @@
 - **内蔵ディスプレイ。** WhateverXeが駆動するのは固定HDMI／DisplayPort出力です。eDP（パネル電源シーケンス、バックライト、リンクトレーニング）はどのプラットフォームでも未実装です。
 - **プラットフォーム。** まず第13世代のハイブリッドCPUでBig Sur 11.7.11が起動する必要があります。検証機ではまだ確認できていません。
 
+同じことは、このforkが新たに登録・観測対象としたAlder Lake-Pにも当てはまります。バックエンドには同種のSKU別GTプロファイル（Hクラスでは最大6 DSS／96 EU）とeDPの対応が必要で、revision 04のステッピング（GT C0／display E0）はRaptor Lake-Pと同じ表を共有します。読み取り専用オブザーバ（`-wex-adlp-observe`）は、そのデータを確立するための第一歩です。
+
 ## 計画
 
 各段階はupstreamと同じく「観測 → 検証 → 有効化」の順で進め、ハードウェアに関するすべての規則にCPUテストを用意します。
 
 | 段階 | 目標 | 完了条件 | 状況 |
 | --- | --- | --- | --- |
-| R1 | 読み取り専用のRaptor Lake-Pプロファイル：fuse、EU構成、ファームウェアの画面状態。forcewakeの取得／解放以外の書き込みなし | macOSでの読み出し結果が、同じ機種のLinux i915キャプチャと一致する | コード完成・CIテスト済み。実機での実行待ち |
+| R1 | 読み取り専用のRaptor Lake-P／Alder Lake-Pプロファイル：fuse、EU構成、ファームウェアの画面状態。forcewakeの取得／解放以外の書き込みなし | macOSでの読み出し結果が、同じ機種のLinux i915キャプチャと一致する | コード完成・CIテスト済み。実機での実行待ち |
 | R2 | GTバックエンド：既存のBCSセルフテスト、次にこのGPUのURB／L3値でアクセラレータ修正を適用 | セルフテストが通り、ファームウェアのframebuffer上でアクセラレータが起動する | 未着手 |
 | R3 | 内蔵ディスプレイの初表示：donorの内蔵パネル用コネクタを残し、ファームウェアが確立したリンクを引き継ぐ | ファームウェアのモードで内蔵パネルにデスクトップが表示される | 未着手 |
 | R4 | 内蔵ディスプレイの本対応：パネル電源シーケンス、バックライト、消灯／点灯、ADL-Pのテーブルによるリンク再トレーニング、144Hz | 輝度調整、スリープ／復帰、ネイティブのリフレッシュレートが動作する | 未着手 |
@@ -44,9 +47,9 @@
 
 ## R1診断の試し方
 
-**動作。** 診断は`-wex-rplp-observe`を指定した場合に限り、物理的にRaptor Lake-PのGPUであるときだけ実行されます。
+**動作。** 診断は`-wex-rplp-observe`を指定した場合は物理的にRaptor Lake-PのGPUであるときだけ、`-wex-adlp-observe`を指定した場合は物理的にAlder Lake-PのGPUであるときだけ実行されます。
 - GPUのfuse（slice、DSS、EU、L3、media）、Display 13の起動時状態、eDP関連レジスタ（パネル電源、バックライト、DPリンク、PSR）を読み取ります。
-- 読み取った値をIORegistryに公開します。
+- 読み取った値をIORegistryに公開します（接頭辞はそれぞれ`RPLP…`／`ADLP…`）。
 - レジスタへの書き込みは、upstreamがAlder Lake-Nで使うものと同じforcewakeの取得／解放のみです。既に他がforcewakeを保持している場合は実行しません。
 - GPUは非対応のままです。
 
@@ -61,13 +64,19 @@
 **収集。**
 
 ```sh
+# Raptor Lake-P
 ioreg -lw0 -r -k RPLPObserveVersion > ~/Desktop/rplp-ioreg.txt
 sudo dmesg | grep -E 'RaptorLakeP|WhateverXe' > ~/Desktop/rplp-dmesg.txt
+
+# Alder Lake-P
+ioreg -lw0 -r -k ADLPObserveVersion > ~/Desktop/adlp-ioreg.txt
+sudo dmesg | grep -E 'AlderLakeP|WhateverXe' > ~/Desktop/adlp-dmesg.txt
 ```
 
 **公開されるproperty。**
-- `RPLPGTReadout`、`RPLPDisplay13Boot`、`RPLPEDPBoot`
-- `RPLPPhysicalMemoryLayout`、`RPLPStolenReservation`
+- `RPLPGTReadout`、`RPLPDisplay13Boot`、`RPLPEDPBoot`（Raptor Lake-P）
+- `ADLPGTReadout`、`ADLPDisplay13Boot`、`ADLPEDPBoot`（Alder Lake-P）
+- `RPLPPhysicalMemoryLayout`、`RPLPStolenReservation`／`ADLPPhysicalMemoryLayout`、`ADLPStolenReservation`
 - 物理ID、revision、GTとディスプレイのステッピング名
 
 ## 関連する取り組み（このリポジトリ外）
@@ -101,7 +110,7 @@ WhateverXeは、一部のIntel Xe-LP内蔵GPU向けにAppleのグラフィック
 | Tiger Lake | `9A40`、`9A49`、`9A78` |
 | Alder Lake-N / Twin Lake | `46D0`–`46D4` |
 
-Raptor Lake-Pには、このforkでもまだバックエンドがありません。上記の[計画](#計画)を参照してください。
+Raptor Lake-PとAlder Lake-Pには、このforkでもまだバックエンドがありません。上記の[計画](#計画)を参照してください。どちらもデバイステーブルには識別用としてのみ登録されており、読み取り専用オブザーバ（R1）を持ちます。
 
 対応状況は機種やコネクタ構成によって異なります。この表はバックエンドの実装範囲を示すもので、すべての機種での動作を保証するものではありません。詳細な選択条件と上書き設定は[デバイス選択](docs/device-selection.md)を参照してください。
 
@@ -177,6 +186,7 @@ Alder Lake-N / Twin Lakeで世代選択や個別機能の有効化引数を追�
 | `-wexbeta` | プラグインのOSバージョンチェックを回避する。kernel／driverの一致条件は維持する。 |
 | `-wex-tgl-off` | Tiger Lakeの処理を無効にする。 |
 | `-wex-rplp-observe` | Raptor Lake-Pのみ。上記の読み取り専用R1診断を公開する。GPUは非対応のまま。 |
+| `-wex-adlp-observe` | Alder Lake-Pのみ。上記の読み取り専用R1診断を公開する。GPUは非対応のまま。 |
 
 ### upstreamのロードマップ
 
