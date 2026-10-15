@@ -6,13 +6,17 @@ machine-name setting is required.
 ## Automatic selection
 
 By default, the physical Intel GPU device ID selects the backend. The implemented
-IDs are Tiger Lake `9A40`, `9A49`, `9A78` and Alder Lake-N / Twin Lake
-`46D0`–`46D4`. The latter require PCI revision 0. OS, driver and hardware-resource
-checks still apply after selection.
+IDs are Tiger Lake `9A40`, `9A49`, `9A78`, Alder Lake-N / Twin Lake
+`46D0`–`46D4`, and the experimental Alder Lake-P GT2 `46A6` at PCI revision
+`0C` only. Alder Lake-N / Twin Lake require PCI revision 0. OS, driver and
+hardware-resource checks still apply after selection.
 
 Other entries in the table supply identification and display names only. A
 listed ID does not imply an implemented backend or a tested machine. See the
 [compatibility summary](../README.md#compatibility) for the current scope.
+
+The `46A6` entry is deliberately a physical-identity profile: an override does
+not qualify another PCI device or revision as Alder Lake-P GT2.
 
 ## Advanced override: device-id
 

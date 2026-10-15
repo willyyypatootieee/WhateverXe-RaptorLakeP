@@ -50,6 +50,18 @@ inline bool resources(uint32_t slice, uint32_t dss, uint32_t euDisable,
     return true;
 }
 
+// The Display-13 adapter also services the separately guarded ADL-P GT2
+// profile. It has the same Gen12 fuse encoding, but never shares the small-GT
+// capacity rule above. Keep this exact full-GT predicate here so readGT can
+// validate the hardware before any donor topology patch is installed.
+inline bool resourcesFullGT2(uint32_t slice,uint32_t dss,uint32_t euDisable,
+                             uint32_t l3Disable,Resources &out) {
+    out={};
+    if(slice!=1 || dss!=0x3f || euDisable || l3Disable!=0xf0)return false;
+    out={1,6,12,96,8,512};
+    return true;
+}
+
 struct Register { uint32_t offset {}, value {}; };
 enum class GTStatus : uint32_t {
     NotAdmitted, ExistingOwner, AckTimeout, Unavailable, ProfileMismatch, ReleaseFailed, Complete
@@ -68,7 +80,7 @@ static_assert(sizeof(GTReadout)==60*4,"AlderLakeN GT readout layout");
 
 // Linux v6.12 gen12 forcewake domains: fuses and BCS are GT, RCS is render.
 // Only acquire an unowned kernel bit0. Never reset domains or alter engines.
-template<class IO> GTReadout readGT(IO &io, bool admitted, uint32_t *edram=nullptr) {
+template<class IO> GTReadout readGT(IO &io,bool admitted,uint32_t *edram=nullptr,bool fullGT2=false) {
     GTReadout out;
     if(!admitted)return out;
     constexpr uint32_t request[] {0xA188,0xA278},ack[] {0x130044,0xD84};
@@ -108,7 +120,8 @@ template<class IO> GTReadout readGT(IO &io, bool admitted, uint32_t *edram=nullp
             if(out.fuses[i]==UINT32_MAX)out.status=GTStatus::Unavailable;
         }
         if(out.status==GTStatus::Complete &&
-           (!resources(out.fuses[0],out.fuses[1],out.fuses[2],out.fuses[3],out.resources) ||
+            (!(fullGT2 ? resourcesFullGT2(out.fuses[0],out.fuses[1],out.fuses[2],out.fuses[3],out.resources) :
+                         resources(out.fuses[0],out.fuses[1],out.fuses[2],out.fuses[3],out.resources)) ||
             out.fuses[4]!=0x000E00FE))out.status=GTStatus::ProfileMismatch;
         if(edram) {
             *edram=io.readable(0x120010) ? io.read(0x120010) : UINT32_MAX;

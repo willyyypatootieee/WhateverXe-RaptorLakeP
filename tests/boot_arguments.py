@@ -67,9 +67,9 @@ using kern_return_t = int;
 struct kmod_info_t {};
 static constexpr int KERN_FAILURE=5, KERN_SUCCESS=0;
 // ACTUAL_SOURCE
-static XE boot(std::initializer_list<const char *> names, uint32_t pci=0x46D28086,uint32_t effective=0) {
+static XE boot(std::initializer_list<const char *> names, uint32_t pci=0x46D28086,uint32_t effective=0,uint32_t revision=0) {
  args.clear(); for (const auto name:names) args.insert(name);
- XE xe; xe.init(); xe.selectProfile(XELP::identify(pci,0,effective?effective:pci)); assert(tglStart(nullptr,nullptr)==KERN_SUCCESS);
+ XE xe; xe.init(); xe.selectProfile(XELP::identify(pci,revision,effective?effective:pci)); assert(tglStart(nullptr,nullptr)==KERN_SUCCESS);
  return xe;
 }
 int main() {
@@ -98,7 +98,10 @@ int main() {
  xe=boot({},0x12348086,0x46D28086);
  assert(xe.adlnRequested && xe.adlnNativeRequested && xe.xeProfile.identity==0x12348086);
  xe=boot({},0x12348086,0x9A498086);assert(xe.tglRequested);
- xe=boot({},0x46A68086);assert(!xe.tglRequested && !xe.adlnRequested);
+  xe=boot({},0x46A68086);assert(!xe.tglRequested && !xe.adlnRequested);
+  xe=boot({},0x46A68086,0x46A68086,0x0c);
+  assert(xe.adlnRequested && xe.adlnNativeRequested && xe.display13FramebufferRequested && xe.tglRequested);
+  xe=boot({},0x46A68086,0,0x0d);assert(!xe.adlnRequested && !xe.adlnNativeRequested);
  for(uint32_t pci:{0x46A68086U,0x46808086U,0xA7A08086U}) {
   xe=boot({},pci);assert(!xe.adlnNativeRequested && !xe.display13FramebufferRequested && !adlnNativeRCSProfileRequested);
  }

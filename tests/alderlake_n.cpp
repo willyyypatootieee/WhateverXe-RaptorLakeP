@@ -212,6 +212,9 @@ int main() {
     }
     assert(profiles>0);
     assert(!AlderLakeN::resources(1,0x40,0,0xf0,res) && !AlderLakeN::resources(1,3,0x100,0xf0,res));
+    assert(AlderLakeN::resourcesFullGT2(1,0x3f,0,0xf0,res));
+    assert(res.dss==6 && res.nativeSubslices==12 && res.eus==96 && res.l3Banks==8 && res.urbKiB==512);
+    assert(!AlderLakeN::resourcesFullGT2(1,0x1f,0,0xf0,res));
     IO absent;assert(AlderLakeN::readDisplay(absent,false).status==AlderLakeN::ReadoutStatus::NotAdmitted);
     assert(absent.reads.empty());
     // Firmware may drive port B through pipe A; port != pipe is intentional.

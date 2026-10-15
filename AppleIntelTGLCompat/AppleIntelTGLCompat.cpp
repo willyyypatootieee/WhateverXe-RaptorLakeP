@@ -78,7 +78,7 @@ extern "C" bool xelpConfigurePortProbe(void *controller,uint32_t abi,uint32_t se
     auto pci=OSDynamicCast(IOPCIDevice,service->getProvider());
     if(!pci)return false;
     XELP::ProbeConfig config;config.profile=XELP::deviceProfile(pci);
-    if(config.profile.family!=XELP::Family::AlderLakeN)return false;
+    if(config.profile.display!=XELP::Display::XeLPD)return false;
     config.combo=selected;config.comboBackend=backend;
     return xelpConfigureDisplay(controller,&config);
 }

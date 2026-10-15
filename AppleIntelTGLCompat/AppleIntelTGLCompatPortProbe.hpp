@@ -10,7 +10,8 @@ namespace XELPPortProbe {
 constexpr uint32_t ABI=1,ADLNPorts=3;
 inline bool adln(uint32_t pci,uint8_t revision) {
     const auto p=XELP::identify(pci,revision);
-    return p.family==XELP::Family::AlderLakeN && p.admitted();
+    return (p.family==XELP::Family::AlderLakeN || p.family==XELP::Family::AlderLakeP) &&
+        p.display==XELP::Display::XeLPD && p.admitted();
 }
 // Keep MI646's qualified TC2 policy unchanged. Other TGL TC transports are
 // not admitted by the ADL-N extension, even when their numeric DDI matches.

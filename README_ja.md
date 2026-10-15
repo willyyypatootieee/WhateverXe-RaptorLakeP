@@ -14,10 +14,11 @@ WhateverXeは、一部のIntel Xe-LP内蔵GPU向けにAppleのグラフィック
 | --- | --- |
 | Tiger Lake | `9A40`、`9A49`、`9A78` |
 | Alder Lake-N / Twin Lake | `46D0`–`46D4` |
+| Alder Lake-P GT2（実験的） | `46A6`、PCI revision `0C`のみ |
 
 対応状況は機種やコネクタ構成によって異なります。この表はバックエンドの実装範囲を示すもので、すべての機種での動作を保証するものではありません。詳細な選択条件と上書き設定は[デバイス選択](docs/device-selection.md)を参照してください。
 
-Tiger LakeとAlder Lake-Nで、外部2画面の1920×1080・60Hz出力、Metal/OpenGL、ハードウェアHEVC、画面の消灯／復帰を確認しています。Tiger LakeではハードウェアH.264のエンコード／デコードも確認しています。3画面同時出力、システムスリープ、より高い解像度や他のコネクタ構成は追加検証が必要です。USB-Cと内蔵ディスプレイへの対応は下記ロードマップに含まれます。
+Tiger LakeとAlder Lake-Nで、外部2画面の1920×1080・60Hz出力、Metal/OpenGL、ハードウェアHEVC、画面の消灯／復帰を確認しています。Tiger LakeではハードウェアH.264のエンコード／デコードも確認しています。Alder Lake-Pの項目は、厳密に`46A6` D0／Display-13に限定したbring-up profileであり、実機での追加検証が必要です。他のAlder Lake-Pシステムへの互換性を示すものではありません。3画面同時出力、システムスリープ、より高い解像度や他のコネクタ構成は追加検証が必要です。USB-Cと内蔵ディスプレイへの対応は下記ロードマップに含まれます。
 
 [Releases](https://github.com/b00t0x/WhateverXe/releases)から **RELEASE** ZIPをダウンロードしてください。DEBUG ZIPは問題調査用です。
 
@@ -67,7 +68,7 @@ OpenCoreの`boot-args`に以下を追加してください。
 | `-disablegfxfirmware` | 現在のバックエンドで、Appleドライバのグラフィックスファームウェア読み込みを無効にする。 |
 | `-wex-nopanel` | 内蔵画面のないTiger Lake機で追加する。現在のAlder Lake-N / Twin Lakeは外部画面用の構成を自動生成するため、この引数を使用しない。 |
 
-Alder Lake-N / Twin Lakeで世代選択や個別機能の有効化引数を追加する必要はありません。
+Alder Lake-N / Twin Lakeおよび厳密なAlder Lake-P `46A6` D0 profileでは、世代選択や個別機能の有効化引数を追加する必要はありません。
 
 ### 任意のブート引数
 

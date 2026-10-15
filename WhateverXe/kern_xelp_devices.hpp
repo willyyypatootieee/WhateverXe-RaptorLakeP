@@ -8,7 +8,7 @@
 namespace XELP {
 enum class Family : uint32_t { Unknown, TigerLake, AlderLakeN, RocketLake, AlderLakeS, AlderLakeP, RaptorLakeS, RaptorLakeP };
 enum class Display : uint32_t { Unknown, XeD = 12, XeLPD = 13 };
-enum class GT : uint32_t { Unknown, TGLGT2, TGLG4, ADLNSmall };
+enum class GT : uint32_t { Unknown, TGLGT2, TGLG4, ADLNSmall, ADLPGT2 };
 enum class Donor : uint32_t { Unknown, C004FC1A = 1 };
 struct DeviceEntry {
     uint16_t device; Family family; Display display; GT backend;
@@ -24,7 +24,10 @@ constexpr DeviceEntry DeviceTable[] {
     {0x4692, Family::AlderLakeS, Display::XeD, GT::Unknown, "Intel UHD Graphics 730"},
     {0x4693, Family::AlderLakeS, Display::XeD, GT::Unknown, "Intel UHD Graphics 710"},
     {0x46A3, Family::AlderLakeP, Display::XeLPD, GT::Unknown, "Intel UHD Graphics"},
-    {0x46A6, Family::AlderLakeP, Display::XeLPD, GT::Unknown, "Intel Iris Xe Graphics"},
+    // ADL-P GT2 is qualified separately from ADL-N: it uses the Display 13
+    // backend but has the full six-DSS Gen12 topology and its own revision
+    // guard. Do not use this entry as a TGL donor-ID substitute.
+    {0x46A6, Family::AlderLakeP, Display::XeLPD, GT::ADLPGT2, "Intel Iris Xe Graphics"},
     {0x46A8, Family::AlderLakeP, Display::XeLPD, GT::Unknown, "Intel Iris Xe Graphics"},
     {0x46AA, Family::AlderLakeP, Display::XeLPD, GT::Unknown, "Intel Iris Xe Graphics"},
     {0x46B3, Family::AlderLakeP, Display::XeLPD, GT::Unknown, "Intel UHD Graphics"},

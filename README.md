@@ -16,6 +16,7 @@ The current target is **macOS Big Sur build 20G1443**.
 | --- | --- |
 | Tiger Lake | `9A40`, `9A49`, `9A78` |
 | Alder Lake-N / Twin Lake | `46D0`–`46D4` |
+| Alder Lake-P GT2 (experimental) | `46A6`, PCI revision `0C` only |
 
 Support varies by system and connector layout. The table includes implemented
 backends, not a guarantee for every machine. See [device selection](docs/device-selection.md)
@@ -23,9 +24,11 @@ for detailed selection conditions and overrides.
 
 Dual external 1920×1080 at 60 Hz output, Metal/OpenGL, hardware HEVC and display
 sleep/wake have been tested on Tiger Lake and Alder Lake-N. Hardware H.264
-encode/decode has also been tested on Tiger Lake. Three simultaneous displays,
-system sleep, higher resolutions and other connector layouts require further
-validation. USB-C and internal display support are planned below.
+encode/decode has also been tested on Tiger Lake. The Alder Lake-P entry is a
+strict 46A6 D0 Display-13 bring-up profile; it requires live hardware validation
+and is not a compatibility claim for other Alder Lake-P systems. Three simultaneous
+displays, system sleep, higher resolutions and other connector layouts require
+further validation. USB-C and internal display support are planned below.
 
 Download the **RELEASE** ZIP from [Releases](https://github.com/b00t0x/WhateverXe/releases). The DEBUG ZIP is for troubleshooting.
 
@@ -87,8 +90,8 @@ Add the following to OpenCore's `boot-args`:
 | `-disablegfxfirmware` | Disable the Apple driver's graphics-firmware loading path for the current backend. |
 | `-wex-nopanel` | Additionally required on Tiger Lake systems without an internal display. Alder Lake-N / Twin Lake currently builds an external-display topology automatically and does not use this flag. |
 
-No family-selection or per-feature enable arguments are required for
-Alder Lake-N / Twin Lake.
+No family-selection or per-feature enable arguments are required for Alder Lake-N /
+Twin Lake or the strict Alder Lake-P `46A6` D0 profile.
 
 ### Optional boot arguments
 

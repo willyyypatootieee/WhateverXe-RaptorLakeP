@@ -25,18 +25,19 @@ struct IOMemoryMap:OSObject {uintptr_t address {};uint64_t bytes {};
 #define IOLog(...) ((void)0)
 // PROVIDER_SOURCE
 int main(int argc,char **argv) {
- assert(argc==2);const bool adln=!strncmp(argv[1],"adln",4);
+  assert(argc==2);const bool adln=!strncmp(argv[1],"adln",4),adlp=!strncmp(argv[1],"adlp",4),display13=adln||adlp;
  const bool legacy=!strncmp(argv[1],"adln-abi1",9);
  const bool fake=strstr(argv[1],"fake")!=nullptr;
- const bool rejected=!strcmp(argv[1],"unknown") || !strcmp(argv[1],"adln-revision");
+  const bool rejected=!strcmp(argv[1],"unknown") || !strcmp(argv[1],"adln-revision");
  IOService controller;IOPCIDevice pci;OSObject access,port,foreign;IOMemoryMap map;
  std::vector<uint8_t> mmio(0x1000000);alignas(8) uint8_t platform[0x1C0] {};
- pci.identity=adln?0x46D18086:0x9A498086;
+  pci.identity=adln?0x46D18086:adlp?0x46A68086:0x9A498086;
  if(!strcmp(argv[1],"tgl-g4"))pci.identity=0x9A788086;
  if(!strcmp(argv[1],"tgl-9a40"))pci.identity=0x9A408086;
  if(!strcmp(argv[1],"adln-16eu"))pci.identity=0x46D28086;
  if(!strcmp(argv[1],"unknown"))pci.identity=0x46A68086;
- if(!strcmp(argv[1],"adln-revision"))pci.revision=1;
+  if(!strcmp(argv[1],"adln-revision"))pci.revision=1;
+  if(adlp)pci.revision=0x0c;
  OSData fakeID;
  if(fake){pci.identity=0x12348086;fakeID.value=adln?0x46D2:0x9A49;pci.property=&fakeID;}
  controller.provider=&pci;platform[0x12]=9;
@@ -51,20 +52,20 @@ int main(int argc,char **argv) {
  field<void *>(&port,0x548)=initial;
  assert(!tglProbePort(&port));
  assert(!hardwareAllowed(nullptr));IOService orphan;assert(!hardwareAllowed(&orphan));
- const bool physicalTGL=!adln && !rejected;
+  const bool physicalTGL=!display13 && !rejected;
  assert(hardwareAllowed(&controller)==physicalTGL);
  assert(tglProbePort(&port)==(physicalTGL?1U:0U));
  field<void *>(&port,0x578)=&foreign;assert(!tglProbePort(&port));field<void *>(&port,0x578)=&access;
  XELP::ProbeConfig config;config.profile=XELP::deviceProfile(&pci);
  xelpSelectedGPU=&pci;xelpSelectedProfile=config.profile;
  assert(xelpSelectedDevice(&pci)==config.profile.admitted());
- assert(xelpAlderLakeNDevice(&pci)==(adln && !rejected));
+  assert(xelpDisplay13Device(&pci)==(display13 && !rejected));
  IOPCIDevice foreignPCI;foreignPCI.identity=pci.identity;foreignPCI.revision=pci.revision;foreignPCI.property=pci.property;
  assert(!xelpSelectedDevice(&foreignPCI));
- config.combo=3;config.comboBackend=adln?3:7;config.legacy=adln?0:0x1F8;config.legacyBackend=adln?0:0x1F8;
+  config.combo=3;config.comboBackend=display13?3:7;config.legacy=display13?0:0x1F8;config.legacyBackend=display13?0:0x1F8;
  // The contract derives generation from physical identity, not boot args.
  assert(!xelpConfigurePortProbe(&controller,2,3,3));
- if(!adln)assert(!xelpConfigurePortProbe(&controller,1,3,3));
+  if(!display13)assert(!xelpConfigurePortProbe(&controller,1,3,3));
  if(rejected) {
   assert(!xelpConfigureDisplay(&controller,&config));
   assert(!xelpConfigurePortProbe(&controller,1,3,3));
@@ -90,7 +91,7 @@ int main(int argc,char **argv) {
  assert(controller.retains==1 && access.retains==1 && map.retains==1);
  assert(xelpConfigureDisplay(&controller,&config));assert(controller.retains==1);
  malformed=config;malformed.combo=1;assert(!xelpConfigureDisplay(&controller,&malformed));
- if(adln){assert(xelpConfigurePortProbe(&controller,1,3,3));assert(!xelpConfigurePortProbe(&controller,2,3,3));}
+  if(display13){assert(xelpConfigurePortProbe(&controller,1,3,3));assert(!xelpConfigurePortProbe(&controller,2,3,3));}
  for(unsigned d=0;d<9;++d){auto rec=reinterpret_cast<uint32_t *>(platform+0x20+24*d);
   const uint32_t values[]={d,d+1,2,0,0x800,0x202};memcpy(rec,values,sizeof(values));
   field<void *>(&port,0x548)=rec;
@@ -99,7 +100,7 @@ int main(int argc,char **argv) {
    const uint32_t bases[]={0x163000,0x16E000,0x16F000};const auto base=bases[(d-3)/2];
    *reinterpret_cast<uint32_t *>(mmio.data()+base+0x8A0)=0x10;
    *reinterpret_cast<uint32_t *>(mmio.data()+base+0x890)=1U<<((d-3)%2);}
-  assert(tglProbePort(&port)==(adln?(d<2?1U:0U):(d<3?1U:4U)));
+   assert(tglProbePort(&port)==(display13?(d<2?1U:0U):(d<3?1U:4U)));
   field<void *>(&port,0x578)=&foreign;assert(!tglProbePort(&port));field<void *>(&port,0x578)=&access;
   field<void *>(&port,0x548)=reinterpret_cast<void *>(1);assert(!tglProbePort(&port));
  }

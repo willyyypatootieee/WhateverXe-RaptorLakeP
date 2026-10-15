@@ -16,7 +16,12 @@ struct Profile {
     bool overridden() const {return identity!=effectiveIdentity;}
     bool admitted() const {return (identity&0xFFFF)==0x8086 && revision<=255 &&
         donor==Donor::C004FC1A && gt!=GT::Unknown &&
-        (family!=Family::AlderLakeN || revision==0);}
+        (family!=Family::AlderLakeN || revision==0) &&
+        // The only ADL-P bring-up profile is the measured 46A6 D0 device.
+        // Other ADL-P rows remain catalogue-only until their topology and
+        // display ownership rules have separate qualification.
+        (family!=Family::AlderLakeP || (gt==GT::ADLPGT2 && identity==0x46A68086 &&
+         effectiveIdentity==identity && revision==0x0C));}
 };
 inline Profile identify(uint32_t physical,uint32_t revision,uint32_t effective) {
     Profile p;p.identity=physical;p.revision=revision;p.effectiveIdentity=effective;
