@@ -3,6 +3,10 @@
     "-adlnconfigstage",
     "-n97configstage"
   ],
+  "-wex-adlp-any-pipe": [
+    "-adlpanypipe",
+    "-n97adlpanypipe"
+  ],
   "-wex-adln-ctx-publish": [
     "-adlnctxpublish",
     "-n97ctxpublish"

@@ -2829,16 +2829,34 @@ void XE::adlnBootstrap(IOPCIDevice *pci) {
 				((!optionProperty || opts) && !mapperOptions && !systemMapper);
 			uint64_t mapperAdmission[] {1,mapperOptions,systemMapper,physicalOptions};
 			IORegistryEntry::getRegistryRoot()->setProperty("N97NativeMapperAdmission",mapperAdmission,sizeof(mapperAdmission));
-			bool prefix=bootstrapReady && AlderLakeN::linearPlan(display,plan,bootDDI)==AlderLakeN::LinearStatus::Ready && plan.pipe==0 &&
+			const auto planStatus=AlderLakeN::linearPlan(display,plan,bootDDI);
+			// The original Display-13 bring-up only admitted the firmware's pipe A
+			// scanout. A fixed external connector may legitimately be booted on B
+			// or C, so permit that tested physical topology only when explicitly
+			// requested for the strict 46A6 D0 profile. The ordinary path remains
+			// pipe A-only until each board's lifecycle is validated.
+			const bool alternatePipe=xelpAlderLakePDevice(pci) &&
+				checkKernelArgument("-wex-adlp-any-pipe");
+			const bool pipeReady=planStatus==AlderLakeN::LinearStatus::Ready &&
+				(plan.pipe==0 || alternatePipe);
+			bool prefix=bootstrapReady && pipeReady &&
 				xelpMemory.range(plan.surface,AlderLakeN::ScanoutBytes,true);
 			for (unsigned i=0;prefix && i<xelpMemory.bytes/4096;++i)
 				prefix=io.readPTE(0x800000+8*i)==xelpMemory.pte(uint64_t(i)*4096);
 			auto aperture=pci->getDeviceMemoryWithRegister(0x18);
-			adlnNativeReady=gt.status==AlderLakeN::GTStatus::Complete && !(edram&1) && prefix &&
-				aperture && aperture->getLength()==0x10000000 && page_size==4096 &&
-				physicalOptions && (pci->configRead16(4)&6)==6 &&
-				checkKernelArgument("-allow3d") && checkKernelArgument("-disablegfxfirmware") &&
-				!checkKernelArgument("-wex-adln-scanout") && !checkKernelArgument("-wex-adln-gpu");
+			const bool topologyReady=gt.status==AlderLakeN::GTStatus::Complete;
+			const bool edramReady=!(edram&1);
+			const bool apertureReady=aperture && aperture->getLength()==0x10000000;
+			const bool pageReady=page_size==4096;
+			const bool pciReady=(pci->configRead16(4)&6)==6;
+			const bool argumentsReady=checkKernelArgument("-allow3d") && checkKernelArgument("-disablegfxfirmware");
+			const bool diagnosticsIdle=!checkKernelArgument("-wex-adln-scanout") && !checkKernelArgument("-wex-adln-gpu");
+			adlnNativeReady=topologyReady && edramReady && prefix && apertureReady && pageReady &&
+				physicalOptions && pciReady && argumentsReady && diagnosticsIdle;
+			uint64_t preflight[] {2,topologyReady,edramReady,bootstrapReady,
+				static_cast<uint32_t>(planStatus),plan.pipe,bootDDI,alternatePipe,pipeReady,prefix,
+				apertureReady,pageReady,physicalOptions,pciReady,argumentsReady,diagnosticsIdle,adlnNativeReady};
+			pci->setProperty("N97NativePreflightDetail",preflight,sizeof(preflight));
 			pci->setProperty("N97NativePreflight",adlnNativeReady);
 			pci->setProperty("N97NativeReservedGGTT",prefix);
 			pci->setProperty("N97NativeEDRAM",edram,32);

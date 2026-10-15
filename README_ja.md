@@ -79,6 +79,7 @@ Alder Lake-N / Twin Lakeおよび厳密なAlder Lake-P `46A6` D0 profileでは�
 | `-wexoff` | WhateverXeを無効にする。 |
 | `-wexbeta` | プラグインのOSバージョンチェックを回避する。kernel／driverの一致条件は維持する。 |
 | `-wex-tgl-off` | Tiger Lakeの処理を無効にする。 |
+| `-wex-adlp-any-pipe` | 実験用の`46A6` D0限定admission。検証済みのfirmware scanoutがDisplay-13のpipe BまたはCの場合も、既定のpipe A限定bring-up gateを通過させる。`-allow3d`と`-disablegfxfirmware`を維持し、外部1画面の実験とpreflight結果の取得にのみ使用した後は削除する。 |
 
 ## ロードマップ
 
