@@ -37,7 +37,7 @@ struct Fixture {
         if(page==2 && deadPower)registers[0x45404]=UINT32_MAX;
         return ptes[page];
     }
-    Readout inspect(unsigned ddi=1) {return Display13FBMemory::inspect(*this,controller,sizeof(controller),framebuffer,sizeof(framebuffer),0x10000000,memory,true,0,ddi);}
+    Readout inspect(unsigned ddi=1,unsigned pipe=0) {return Display13FBMemory::inspect(*this,controller,sizeof(controller),framebuffer,sizeof(framebuffer),0x10000000,memory,true,0,ddi,pipe);}
 };
 static void testRelocatedPools() {
     for(auto ggc : {0xFEC1U,0x02C1U,0x03C1U,0x04C1U}) {
@@ -49,6 +49,16 @@ static void testRelocatedPools() {
         f.ptes.back()^=2;
         assert(Display13FBMemory::inspect(f,f.controller,sizeof(f.controller),f.framebuffer,sizeof(f.framebuffer),0x10000000,moved).status==Status::PTE);
     }
+}
+static void testAlternateBootPipe() {
+    Fixture f;
+    const uint32_t delta=0x1000;
+    f.registers[0x45404]=0x3|(1U<<12);
+    for(auto reg : {0x60400U,0x70008U,0x70180U,0x70188U,0x7018CU,0x70190U,0x701A4U,0x7019CU,0x701ACU})
+        f.registers[reg+delta]=f.registers[reg];
+    assert(f.inspect(1,1).status==Status::Complete);
+    f.registers[0x7019C+delta]=4096;
+    assert(f.inspect(1,1).status==Status::DisplayState);
 }
 static void testSlotClaims() {
     uint8_t controller[0x1C20] {},fb[3][0x4B90] {};
@@ -75,6 +85,7 @@ static void testSlotClaims() {
 }
 
 int main() {
+    testAlternateBootPipe();
     uint64_t platform[0x1C0/8],savedPlatform[0x1C0/8];uint8_t poolController[0x1C20] {};
     memset(platform,0x5A,sizeof(platform));put(platform,0x14,uint32_t(0x4000000));
     memcpy(savedPlatform,platform,sizeof(platform));put(poolController,0xDE8,uint32_t(0x4000000));

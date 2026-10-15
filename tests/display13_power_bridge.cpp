@@ -55,8 +55,8 @@ int main() {
     // initial A/DDI_B ownership. A coarse PG3 caller cannot identify the path.
     { IO io; NativeBridge b; assert(ok(b.begin(io)) && ok(b.getPG(io,3)));
       assert(b.putPG(io,1).status==Status::Unbalanced && b.putDDI(io,1).status==Status::Unbalanced);
-      assert(b.adoptBootPath(0,0,1).status==Status::InvalidDomains &&
-          b.adoptBootPath(0x1000,1,1).status==Status::InvalidDomains && b.adoptBootPath(0x1000,0,0).status==Status::InvalidDomains);
+       assert(b.adoptBootPath(0,0,1).status==Status::InvalidDomains &&
+           b.adoptBootPath(0x1000,3,1).status==Status::InvalidDomains && b.adoptBootPath(0x1000,0,0).status==Status::InvalidDomains);
       assert(ok(b.getPG(io,1)) && ok(b.putPG(io,1)) && ok(b.getDDI(io,1)) && ok(b.putDDI(io,1)));
       slots(b,2,1,1,0); assert(b.nativeDDIBRefs()==1 && b.bootPGProtected && b.bootDDIProtected);
       assert(ok(b.putPG(io,3)) && ok(b.adoptBootPath(0x1000,0,1)));
@@ -65,7 +65,11 @@ int main() {
       assert(b.forgetBootPath(0x1000) && !b.bootPath && b.bootAdopted);
       assert(b.adoptBootPath(0x2000,0,1).status==Status::Unbalanced && !b.bootPath);
 
-      assert(ok(b.putPG(io,1)) && ok(b.putDDI(io,1))); slots(b,0,0,0,0); }
+       assert(ok(b.putPG(io,1)) && ok(b.putDDI(io,1))); slots(b,0,0,0,0); }
+    // The bridge transfers the protected references to the measured physical
+    // scanout pipe. The DDI identity remains independent from that pipe index.
+    { IO io; NativeBridge b; assert(ok(b.begin(io)) && ok(b.adoptBootPath(0x2000,1,1)));
+      assert(b.bootPath==0x2000 && b.bootPort==1 && ok(b.putPG(io,1)) && ok(b.putDDI(io,1))); }
     // Other physical ports are not enabled as a side effect of generic
     // PG3/PG4 scopes. Missing domains are errors, not simulated successes.
     { IO io; NativeBridge b; assert(ok(b.begin(io)) && ok(b.getPG(io,4))); slots(b,2,1,1,1);

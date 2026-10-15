@@ -38,7 +38,7 @@ struct NativeBridge {
     Lease pgLease[4], ddiLease[7], auxLease[7];
     uint32_t pgRefs[4] {}, ddiRefs[7] {}, auxRefs[7] {};
     uint32_t selectedPorts {2};
-    unsigned bootPort {1}; // Boot pipe remains A until path admission is generalized.
+    unsigned bootPort {1}; // Physical DDI selected by the measured boot pipe.
     bool begun {};
     bool bootPGProtected {}, bootDDIProtected {};
     uintptr_t bootPath {};
@@ -173,7 +173,7 @@ struct NativeBridge {
     Result adoptBootPath(uintptr_t path, unsigned pipe, unsigned port) {
         Result r;
         if (!begun || state.faulted) return r;
-        if (!path || pipe != 0 || port != bootPort || !acceptsPort(port)) { r.status = Status::InvalidDomains; return r; }
+        if (!path || pipe >= 3 || port != bootPort || !acceptsPort(port)) { r.status = Status::InvalidDomains; return r; }
         if (bootAdopted || bootPath || !bootPGProtected || !bootDDIProtected || !pgRefs[0] || !ddiRefs[port]) {
             r.status = Status::Unbalanced; return r;
         }

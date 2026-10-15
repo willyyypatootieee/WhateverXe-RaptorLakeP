@@ -102,7 +102,7 @@ Twin Lake or the strict Alder Lake-P `46A6` D0 profile.
 | `-wexoff` | Disable WhateverXe. |
 | `-wexbeta` | Bypass the plugin's OS-version check. Exact kernel/driver checks still apply. |
 | `-wex-tgl-off` | Disable the Tiger Lake path. |
-| `-wex-adlp-any-pipe` | Experimental `46A6` D0-only admission: allow a validated firmware scanout on Display-13 pipe B or C instead of the default pipe-A-only bring-up gate. Keep `-allow3d` and `-disablegfxfirmware`; use only for a single external-display experiment and remove it after collecting the preflight result. |
+| `-wex-adlp-any-pipe` | Experimental `46A6` D0-only admission: allow one validated firmware scanout on Display-13 pipe B or C and retain that measured pipe through boot handoff, power, and IRQ validation. Keep `-allow3d` and `-disablegfxfirmware`; use only for a single external-display experiment and remove it after collecting the preflight result. |
 
 ## Roadmap
 

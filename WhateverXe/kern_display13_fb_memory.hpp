@@ -326,12 +326,12 @@ template<class IO> SurfaceReadout inspectSurface(IO &io,const void *controller,s
 template<class IO> Readout inspect(IO &io,const void *controller,size_t controllerBytes,
                                   const void *framebuffer,size_t framebufferBytes,
                                   uint64_t apertureBytes,const XELPMemory::Layout &memory,bool bootScanout=true,uintptr_t expectedOwner=0,
-                                  unsigned expectedDDI=1) {
+                                   unsigned expectedDDI=1,unsigned expectedPipe=0) {
     Readout r;
     if (!associations(controller,controllerBytes,framebuffer,framebufferBytes,expectedOwner)) {
         r.status=Status::Association;return r;
     }
-    if(bootScanout && expectedDDI>=3) {r.status=Status::DisplayState;return r;}
+    if(bootScanout && (expectedDDI>=3 || expectedPipe>=3)) {r.status=Status::DisplayState;return r;}
     r.pool=pool(controller);const auto &p=r.pool;
     if (field<uint8_t>(framebuffer,0x4288)!=0 || !field<uint8_t>(controller,0xDF5) ||
         field<uint8_t>(controller,0xDF5)>3 || !field<uint8_t>(controller,0xDF4) ||
@@ -347,25 +347,27 @@ template<class IO> Readout inspect(IO &io,const void *controller,size_t controll
         !io.readable(0x800000+8*(p.firstPage+p.pages)-1)) {
         r.status=Status::PoolRange;return r;
     }
-    // Read only the powered boot pipe. Linear XRGB8888 FHD uses byte GGTT
+    // Read only the measured powered boot pipe. Linear XRGB8888 FHD uses byte GGTT
     // offsets, with Display 13's DPT disabled. No fence register is required.
-    constexpr uint32_t regs[]={0x45404,0x42084,0x60400,0x70008,0x70180,0x70188,
-        0x7018C,0x70190,0x701A4,0x7019C,0x701AC};
+    const auto delta=0x1000*expectedPipe;
+    const uint32_t regs[]={0x45404,0x42084,0x60400+delta,0x70008+delta,0x70180+delta,0x70188+delta,
+        0x7018C+delta,0x70190+delta,0x701A4+delta,0x7019C+delta,0x701AC+delta};
     if(bootScanout)for(auto reg:regs)if(!io.readable(reg))return r;
     if(!io.readable(0x45404))return r;
     const auto wells=io.read(0x45404);
-    if(wells==UINT32_MAX || (wells&(bootScanout ? 0x403U : 3U))!=(bootScanout ? 0x403U : 3U)) {r.status=Status::DisplayState;return r;}
+    const auto requiredWells=bootScanout ? (0x3U|(1U<<(10+2*expectedPipe))) : 3U;
+    if(wells==UINT32_MAX || (wells&requiredWells)!=requiredWells) {r.status=Status::DisplayState;return r;}
     uint32_t dpt=0,trans=0,conf=0,position=0,offset=0;
     if(bootScanout) {
-        dpt=io.read(0x42084);trans=io.read(0x60400);conf=io.read(0x70008);
-        position=io.read(0x7018C);offset=io.read(0x701A4);
-        r.surface=io.read(0x7019C);r.control=io.read(0x70180);r.stride=io.read(0x70188);r.size=io.read(0x70190);
+        dpt=io.read(0x42084);trans=io.read(0x60400+delta);conf=io.read(0x70008+delta);
+        position=io.read(0x7018C+delta);offset=io.read(0x701A4+delta);
+        r.surface=io.read(0x7019C+delta);r.control=io.read(0x70180+delta);r.stride=io.read(0x70188+delta);r.size=io.read(0x70190+delta);
         const auto geometry=XELPGeometry::linear(r.control,r.stride,r.size,position,offset);
         if (!(dpt&(1U<<30)) || !(trans&(1U<<31)) || ((trans>>27)&15)!=expectedDDI+1 ||
             ((trans>>24)&7)>1 || ((trans>>20)&7) || (conf&0xC0000000)!=0xC0000000 ||
             !geometry.valid ||
             position || offset || (r.surface&4095) ||
-            r.surface!=io.read(0x701AC) || r.surface<p.base ||
+            r.surface!=io.read(0x701AC+delta) || r.surface<p.base ||
             uint64_t(r.surface)+geometry.bytes>uint64_t(p.base)+p.bytes) {
             r.status=Status::DisplayState;return r;
         }
@@ -382,13 +384,13 @@ template<class IO> Readout inspect(IO &io,const void *controller,size_t controll
     // withdrawn while validating the GGTT. Then reject all layout changes,
     // including DPT/position changes with an unchanged surface address.
     const auto finalWells=io.read(0x45404);
-    if(finalWells==UINT32_MAX || (finalWells&(bootScanout ? 0x403U : 3U))!=(bootScanout ? 0x403U : 3U) || !same(p,pool(controller)) ||
+    if(finalWells==UINT32_MAX || (finalWells&requiredWells)!=requiredWells || !same(p,pool(controller)) ||
         !associations(controller,controllerBytes,framebuffer,framebufferBytes,expectedOwner) ||
         field<uint8_t>(framebuffer,0x4288)!=0 || !(field<uint32_t>(controller,0xDF0)&1) ||
-        (bootScanout && (io.read(0x42084)!=dpt || io.read(0x60400)!=trans || io.read(0x70008)!=conf ||
-        io.read(0x7018C)!=position || io.read(0x701A4)!=offset ||
-        io.read(0x7019C)!=r.surface || io.read(0x701AC)!=r.surface ||
-        io.read(0x70180)!=r.control || io.read(0x70188)!=r.stride || io.read(0x70190)!=r.size))) {
+        (bootScanout && (io.read(0x42084)!=dpt || io.read(0x60400+delta)!=trans || io.read(0x70008+delta)!=conf ||
+        io.read(0x7018C+delta)!=position || io.read(0x701A4+delta)!=offset ||
+        io.read(0x7019C+delta)!=r.surface || io.read(0x701AC+delta)!=r.surface ||
+        io.read(0x70180+delta)!=r.control || io.read(0x70188+delta)!=r.stride || io.read(0x70190+delta)!=r.size))) {
         r.status=Status::StateChanged;return r;
     }
     r.status=Status::Complete;return r;

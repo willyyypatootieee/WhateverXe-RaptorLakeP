@@ -45,10 +45,15 @@ inline uint32_t bootDDI(const TGLHDMIWiring &w,uint32_t trans) {
     const auto port=selector-1;
     return (w.hdmi&(1U<<port)) ? port : UINT32_MAX;
 }
-// Current handoff adopts one real GOP on pipe A. A dual board policy does not
-// authorize ignoring a second firmware scanout or an unknown/unpowered bank.
+// A handoff adopts exactly one measured firmware scanout. A dual board policy
+// does not authorize ignoring a second GOP or an unknown/unpowered bank.
+inline uint32_t bootstrapPipe(bool complete,uint32_t powered,uint32_t active) {
+    if(!complete || !active || (active&(active-1)) || (active&~7U) || (active&~powered))return UINT32_MAX;
+    for(uint32_t pipe=0;pipe<3;++pipe)if(active&(1U<<pipe))return pipe;
+    return UINT32_MAX;
+}
 inline uint32_t bootstrapDDI(const TGLHDMIWiring &w,bool complete,uint32_t powered,uint32_t active,uint32_t trans) {
-    return complete && active==1 && (powered&1) ? bootDDI(w,trans) : UINT32_MAX;
+    return bootstrapPipe(complete,powered,active)<3 ? bootDDI(w,trans) : UINT32_MAX;
 }
 // Preserve donor record count, DDI identities, memory sizing and unrelated
 // settings. Native objects retain pointers to this stable copy. Preflight

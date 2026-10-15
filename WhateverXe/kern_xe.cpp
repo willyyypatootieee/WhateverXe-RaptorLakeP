@@ -3097,6 +3097,7 @@ struct Display13FBPipeContext {
 struct Display13FBPowerContext {
     Display13FBPipeContext pipe[3];
     Display13Power::NativeBridge bridge;
+    uint32_t bootPipe {UINT32_MAX}; // Measured firmware scanout; never inferred from DDI/FB index.
     Display13Power::Lease engine;
     Display13DBUF::State dbuf;
     Display13WM::Latency latency;
@@ -3574,7 +3575,7 @@ static Display13FBMemory::Readout display13FBInspectMemory(IOService *fb,bool bo
 		uint64_t readPTE(uint32_t reg) const {return *reinterpret_cast<volatile uint64_t *>(map->getVirtualAddress()+reg);}
 	} io {c.map};
 	return Display13FBMemory::inspect(io,controller,controller->getMetaClass()->getClassSize(),
-		fb,fb->getMetaClass()->getClassSize(),aperture->getLength(),xelpMemory,bootScanout,display13FBExpectedOwner(controller),c.bridge.bootPort);
+		fb,fb->getMetaClass()->getClassSize(),aperture->getLength(),xelpMemory,bootScanout,display13FBExpectedOwner(controller),c.bridge.bootPort,pipe);
 }
 }
 
@@ -5483,7 +5484,8 @@ void XE::wrapAlderLakeNSetupWorkLoop(IOService *controller,IOWorkLoop *workLoop)
 	uint64_t record[32] {};Display13Power::Result result;
 	IOLockLock(c.lock);
 	if(sourceBound && !c.workLoop) {workLoop->retain();c.workLoop=workLoop;}
-	auto fb=c.pipe[0].memoryFramebuffer;
+	const auto bootPipe=c.bootPipe;
+	auto fb=bootPipe<3 ? c.pipe[bootPipe].memoryFramebuffer : nullptr;
 	auto pci=controller ? OSDynamicCast(IOPCIDevice,controller->getProvider()) : nullptr;
 	// Controller start can publish PCI-backed FB children before the controller
 	// itself becomes a registered service. Publish only copied CPU evidence at
@@ -5506,7 +5508,8 @@ void XE::wrapAlderLakeNSetupWorkLoop(IOService *controller,IOWorkLoop *workLoop)
 			if(plane && plane->getMetaClass()->getClassSize()>=0x1C8) {
 				check[22]=(Display13FBMemory::field<void *>(plane,0x68)==fb) |
 					((Display13FBMemory::field<void *>(plane,0x70)==path)<<1) | ((Display13FBMemory::field<void *>(plane,0x90)==c.access)<<2);
-				check[23]=(Display13FBMemory::field<uint32_t>(plane,0x78)==0) | ((Display13FBMemory::field<uint32_t>(plane,0x98)==0x70180)<<1);
+				check[23]=(Display13FBMemory::field<uint32_t>(plane,0x78)==bootPipe) |
+					((Display13FBMemory::field<uint32_t>(plane,0x98)==0x70180+0x1000*bootPipe)<<1);
 				check[27]=Display13FBMemory::field<uint32_t>(plane,0x100);check[28]=Display13FBMemory::field<uint32_t>(plane,0x118);
 				check[29]=Display13FBMemory::field<uint32_t>(plane,0x11C);check[30]=Display13FBMemory::field<uint32_t>(plane,0x120);
 			}
@@ -5521,7 +5524,7 @@ void XE::wrapAlderLakeNSetupWorkLoop(IOService *controller,IOWorkLoop *workLoop)
 		controller==c.controller && fb && pci && workLoop && c.bridge.begun &&
 		!c.bridge.state.faulted && !c.clockFaulted && !c.memoryFaulted) {
 		auto source=OSDynamicCast(IOFilterInterruptEventSource,Display13FBMemory::field<OSObject *>(controller,0xE20));
-		const auto r=display13FBInspectMemory(fb);
+		const auto r=display13FBInspectMemory(fb,true,bootPipe);
 		check[13]=static_cast<uint32_t>(r.status);
 		check[31]=r.control;check[32]=r.stride;check[33]=r.size;check[34]=r.surface;
 		// The native constructor registers against this actual PCI provider;
@@ -5535,8 +5538,8 @@ void XE::wrapAlderLakeNSetupWorkLoop(IOService *controller,IOWorkLoop *workLoop)
 			Display13FBMemory::field<uint32_t>(fb,0x3FD8)==0 &&
 			Display13FBMemory::field<uint32_t>(fb,0x4A00)==1;
 		auto path=valid ? Display13FBMemory::field<OSObject *>(fb,0x4A08) : nullptr;
-		valid=valid && path && path->getMetaClass()->getClassSize()>=0x3730 &&
-			Display13FBMemory::field<uint32_t>(path,0x3640)==0 &&
+		valid=valid && bootPipe<3 && path && path->getMetaClass()->getClassSize()>=0x3730 &&
+			Display13FBMemory::field<uint32_t>(path,0x3640)==bootPipe &&
 			// +3644 is the donor's boot attachment state, set to literal 2
 			// before getPortByIndex at +67A5F. It is not a DDI selector.
 			Display13FBMemory::field<uint32_t>(path,0x3644)==2;
@@ -5547,8 +5550,8 @@ void XE::wrapAlderLakeNSetupWorkLoop(IOService *controller,IOWorkLoop *workLoop)
 			Display13FBMemory::field<uintptr_t>(plane,0x68)==reinterpret_cast<uintptr_t>(fb) &&
 			Display13FBMemory::field<uintptr_t>(plane,0x70)==reinterpret_cast<uintptr_t>(path) &&
 			Display13FBMemory::field<uintptr_t>(plane,0x90)==reinterpret_cast<uintptr_t>(c.access) &&
-			Display13FBMemory::field<uint32_t>(plane,0x78)==0 &&
-			Display13FBMemory::field<uint32_t>(plane,0x98)==0x70180 &&
+			Display13FBMemory::field<uint32_t>(plane,0x78)==bootPipe &&
+			Display13FBMemory::field<uint32_t>(plane,0x98)==0x70180+0x1000*bootPipe &&
 			Display13FBMemory::field<uint32_t>(plane,0x100)==r.control &&
 			Display13FBMemory::field<uint32_t>(plane,0x118)==r.stride &&
 			Display13FBMemory::field<uint32_t>(plane,0x11C)==r.size &&
@@ -5572,12 +5575,12 @@ void XE::wrapAlderLakeNSetupWorkLoop(IOService *controller,IOWorkLoop *workLoop)
 		}
 		check[37]=valid;
 		if(valid) {
-			if(!c.bridge.bootAdopted)result=c.bridge.adoptBootPath(reinterpret_cast<uintptr_t>(path),0,c.bridge.bootPort);
+			if(!c.bridge.bootAdopted)result=c.bridge.adoptBootPath(reinterpret_cast<uintptr_t>(path),bootPipe,c.bridge.bootPort);
 			else if(c.bridge.bootPath==reinterpret_cast<uintptr_t>(path))result.status=Display13Power::Status::Complete;
 			if(result.status==Display13Power::Status::Complete &&
 				!Display13Power::publishObject(c.bridge,c.power,0x80,controller,0x1C20))result.status=Display13Power::Status::NotReady;
 		}
-		c.pipe[0].memory=r;
+		if(bootPipe<3)c.pipe[bootPipe].memory=r;
 	}
 	if(result.status!=Display13Power::Status::Complete)adlnFault(c.bridge.state.faulted,__LINE__);
 	display13FBPowerRecord(record,7,0,result);
@@ -7372,19 +7375,24 @@ void XE::wrapAlderLakeNPowerInit(void *power,void *controller) {
 			// Reference failures retain mappings/objects for diagnosis until reboot.
 			service->retain();static_cast<OSObject *>(power)->retain();static_cast<OSObject *>(c.access)->retain();
 			Display13FBPowerIO io {map};
-			const auto wells=io.read(Display13Power::Driver),a=io.read(0x60400),pipeA=io.read(0x70008);
-			const auto bootPort=Display13FBTopology::bootDDI(callbackXE->adlnHDMIWiring,a);
-			const auto ddi=bootPort<3 ? io.read(0x64000+0x100*bootPort) : UINT32_MAX;
-			// The initial protected references belong to the measured pipe A /
-			// selected Combo boot display. Validate that live topology before acquiring
-			// them. Resource/surface/IRQ adoption remains a separate operation.
-			bool boot=bootPort<3 && wells!=UINT32_MAX && (wells&(1U<<10)) &&
-				pipeA!=UINT32_MAX && ddi!=UINT32_MAX && (pipeA&(1U<<31)) && (ddi&(1U<<31));
-			for(unsigned pipe=1;pipe<3;++pipe) if(wells&(1U<<(2*(5+pipe)))) {
-				const auto trans=io.read(0x60400+pipe*0x1000);
-				boot=boot && trans!=UINT32_MAX && !(trans&(1U<<31));
+			const auto wells=io.read(Display13Power::Driver);
+			uint32_t powered=0,active=0,trans[3] {UINT32_MAX,UINT32_MAX,UINT32_MAX},conf[3] {UINT32_MAX,UINT32_MAX,UINT32_MAX};
+			if(wells!=UINT32_MAX)for(unsigned pipe=0;pipe<3;++pipe)if(wells&(1U<<(2*(5+pipe)))) {
+				powered|=1U<<pipe;
+				trans[pipe]=io.read(0x60400+pipe*0x1000);conf[pipe]=io.read(0x70008+pipe*0x1000);
+				if((trans[pipe]&conf[pipe])&(1U<<31))active|=1U<<pipe;
 			}
-			if(boot)result=c.bridge.begin(io,bootPort,callbackXE->adlnHDMIWiring.hdmi);
+			const auto bootPipe=Display13FBTopology::bootstrapPipe(wells!=UINT32_MAX,powered,active);
+			const auto bootPort=bootPipe<3 ? Display13FBTopology::bootDDI(callbackXE->adlnHDMIWiring,trans[bootPipe]) : UINT32_MAX;
+			const auto ddi=bootPort<3 ? io.read(0x64000+0x100*bootPort) : UINT32_MAX;
+			// A non-A firmware scanout is admitted only through the explicit strict
+			// 46A6 diagnostic argument. The same measured pipe then owns power,
+			// handoff and IRQ state; never translate it to an A-only lifecycle.
+			const bool alternate=bootPipe && checkKernelArgument("-wex-adlp-any-pipe");
+			bool boot=bootPipe<3 && (bootPipe==0 || alternate) && bootPort<3 && wells!=UINT32_MAX &&
+				(wells&(1U<<(10+2*bootPipe))) && trans[bootPipe]!=UINT32_MAX && conf[bootPipe]!=UINT32_MAX &&
+				(trans[bootPipe]&(1U<<31)) && (conf[bootPipe]&(1U<<31)) && ddi!=UINT32_MAX && (ddi&(1U<<31));
+			if(boot) {result=c.bridge.begin(io,bootPort,callbackXE->adlnHDMIWiring.hdmi);if(result.status==Display13Power::Status::Complete)c.bootPipe=bootPipe;}
 			else {result.status=Display13Power::Status::InvalidDomains;adlnFault(c.bridge.state.faulted,__LINE__);}
 			if(result.status==Display13Power::Status::Complete && !Display13Power::publishObject(c.bridge,power,0x80,controller,0xC60)) {
 				result.status=Display13Power::Status::NotReady;adlnFault(c.bridge.state.faulted,__LINE__);
@@ -7401,9 +7409,9 @@ void XE::wrapAlderLakeNPowerInit(void *power,void *controller) {
 				auto irqLock=*reinterpret_cast<IOSimpleLock **>(static_cast<uint8_t *>(controller)+0x90);
 				if(irqLock) {
 					display13FBIRQ.base=map->getVirtualAddress();display13FBIRQ.lock=irqLock;
-					// The bootstrap proof above measured only live pipe A. Later
-					// secondary admissions come from actual allocator/path publication.
-					__atomic_store_n(&display13FBIRQ.admittedPipes,1U,__ATOMIC_RELEASE);
+					// Publish only the same measured pipe that owns the protected
+					// boot references. Later pipes need allocator/path proof.
+					__atomic_store_n(&display13FBIRQ.admittedPipes,1U<<c.bootPipe,__ATOMIC_RELEASE);
 					__atomic_store_n(&display13FBIRQ.controller,service,__ATOMIC_RELEASE);
 				} else {result.status=Display13Power::Status::NotReady;adlnFault(c.bridge.state.faulted,__LINE__);}
 			}

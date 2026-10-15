@@ -72,12 +72,13 @@ int main() {
                 assert(bootDDI(w,trans)==expected);
             }
         assert(bootDDI(w,UINT32_MAX)==UINT32_MAX);
+        assert(bootstrapPipe(true,3,1)==0 && bootstrapPipe(true,3,2)==1);
         assert(bootstrapDDI(w,true,3,1,0x89030100)==((mask&1)?0U:UINT32_MAX));
-        assert(bootstrapDDI(w,true,3,1,0x91030100)==((mask&2)?1U:UINT32_MAX));
+        assert(bootstrapDDI(w,true,3,2,0x91030100)==((mask&2)?1U:UINT32_MAX));
         assert(bootstrapDDI(w,true,3,3,0x89030100)==UINT32_MAX); // No silent second-GOP takeover.
         assert(bootstrapDDI(w,true,2,1,0x89030100)==UINT32_MAX);
         assert(bootstrapDDI(w,false,3,1,0x89030100)==UINT32_MAX);
-        assert(bootstrapDDI(w,true,3,2,0x91030100)==UINT32_MAX); // Boot backend still adopts pipe A.
+        assert(bootstrapPipe(true,3,3)==UINT32_MAX && bootstrapPipe(true,2,1)==UINT32_MAX);
         for(unsigned d=0;d<Ports;++d) {
             const bool active=(mask&(1U<<d))!=0;
             assert(selected(out.data(),out.config(d),w)==active);
