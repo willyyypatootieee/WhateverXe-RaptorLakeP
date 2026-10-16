@@ -3252,12 +3252,12 @@ static bool display13FBAssociations(const void *controller,size_t controllerByte
  const auto surface=Display13FBMemory::field<uintptr_t>(fb,0x4348);
  return Display13FBMemory::publishedSurface(display13FBPower.pipe,fb,surface);
 }
-static XELP::NativePorts adlnNativePorts(const void *platform,const Display13HDMIWiring &wiring) {
-	return callbackXE && callbackXE->adlnInternalPanel ? Display13FBTopology::boundInternalPanel(platform) :
+static XELP::NativePorts adlnNativePorts(const void *platform,const Display13HDMIWiring &wiring,bool internalPanel) {
+	return internalPanel ? Display13FBTopology::boundInternalPanel(platform) :
 		Display13FBTopology::boundPorts(platform,wiring);
 }
-static bool adlnSelectedPort(const void *platform,const void *config,const Display13HDMIWiring &wiring) {
-	return callbackXE && callbackXE->adlnInternalPanel ? Display13FBTopology::selectedInternalPanel(platform,config) :
+static bool adlnSelectedPort(const void *platform,const void *config,const Display13HDMIWiring &wiring,bool internalPanel) {
+	return internalPanel ? Display13FBTopology::selectedInternalPanel(platform,config) :
 		Display13FBTopology::selected(platform,config,wiring);
 }
 
@@ -3265,7 +3265,7 @@ static bool adlnSelectedPort(const void *platform,const void *config,const Displ
 // framebuffer mutex and display-owner lock keep its graph stable; retained FB
 // identities and published backing are checked independently by the caller.
 static TGLFBBinding::Readout adlnInspectPathBinding(IOService *fb,OSObject *path,
-                                                 const void *platform,const Display13HDMIWiring &wiring) {
+                                                  const void *platform,const Display13HDMIWiring &wiring,bool internalPanel) {
 	auto controller=static_cast<IOService *>(display13FBPower.controller);
 	if(!controller || !fb || !path || controller->getMetaClass()->getClassSize()<0x1C20 ||
 		fb->getMetaClass()->getClassSize()<0x4B90 || path->getMetaClass()->getClassSize()<0x3730)return {};
@@ -3276,7 +3276,7 @@ static TGLFBBinding::Readout adlnInspectPathBinding(IOService *fb,OSObject *path
 		{path,path->getMetaClass()->getClassSize()}, {plane,plane ? plane->getMetaClass()->getClassSize() : 0},
 		{port,port ? port->getMetaClass()->getClassSize() : 0}, display13FBExpectedOwner(controller)
 	};
-	return TGLFBBinding::inspect(objects,adlnNativePorts(platform,wiring),true);
+	return TGLFBBinding::inspect(objects,adlnNativePorts(platform,wiring,internalPanel),true);
 }
 
 
@@ -4524,7 +4524,7 @@ void XE::adlnSysMemOperation(IOService *controller,uint32_t slot,bool release) {
 			!layout.slots[slot].descriptor && adlnSysMemClaim(controller,slot)==fb;
 		if(ready) {
 			stage=7;auto path=Display13FBMemory::singlePath<OSObject *>(fb);
-			const auto binding=adlnInspectPathBinding(fb,path,callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring);
+			const auto binding=adlnInspectPathBinding(fb,path,callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring,callbackXE->adlnInternalPanel);
 			pipe=binding.pipe;ready=binding.status==TGLFBBinding::Status::Complete && pipe<3;
 		}
 		if(ready) {
@@ -4839,7 +4839,7 @@ uint32_t XE::wrapAlderLakeNPortState(OSObject *port) {
 	if(!s->display13FBTopologyHooksReady || !s->adlnTopologyController || !port || port->getMetaClass()->getClassSize()<0x580)return 0;
 	auto config=Display13FBMemory::field<uint32_t *>(port,0x548);
 	if((s->adlnInternalPanel ? Display13FBTopology::selectedInternalPanel(s->adlnPlatform,config) :
-		adlnSelectedPort(s->adlnPlatform,config,s->adlnHDMIWiring))) {
+		adlnSelectedPort(s->adlnPlatform,config,s->adlnHDMIWiring,s->adlnInternalPanel))) {
         // CPU binding only. TC bits are added when mode/AUX/PLL/GOP become
         // qualified together; a board description alone is insufficient.
         if(!s->xelpBindProbe(s->adlnTopologyController)) {
@@ -5356,7 +5356,7 @@ uint32_t XE::wrapDisplay13FBDDC(IOService *fb,int connection,uint32_t block,uint
 }
 uint32_t XE::wrapAlderLakeNPortDDC(OSObject *port,uint32_t block,uint8_t *data,bool force) {
     auto config=Display13FBMemory::field<uint32_t *>(port,0x548);
-    const bool selected=adlnSelectedPort(callbackXE->adlnPlatform,config,callbackXE->adlnHDMIWiring);
+    const bool selected=adlnSelectedPort(callbackXE->adlnPlatform,config,callbackXE->adlnHDMIWiring,callbackXE->adlnInternalPanel);
     uint64_t r[8] {1,block,force,0,0,config ? config[0] : 9};
     auto root=IORegistryEntry::getRegistryRoot();if(selected)root->setProperty("N97FBPortDDCEntry",r,sizeof(r));
     const auto result=FunctionCast(wrapAlderLakeNPortDDC,callbackXE->orgAlderLakeNPortDDC)(port,block,data,force);r[3]=result;
@@ -5615,7 +5615,7 @@ void XE::wrapAlderLakeNSetupWorkLoop(IOService *controller,IOWorkLoop *workLoop)
 		if(valid) {
 			auto config=Display13FBMemory::field<uint32_t *>(port,0x548);
 			valid=Display13FBTopology::bound(callbackXE->adlnPlatform,config,c.bridge.bootPort) &&
-				adlnSelectedPort(callbackXE->adlnPlatform,config,callbackXE->adlnHDMIWiring) &&
+				adlnSelectedPort(callbackXE->adlnPlatform,config,callbackXE->adlnHDMIWiring,callbackXE->adlnInternalPanel) &&
 				Display13Power::objectAssociations(c.power,0x80,controller,0x1C20);
 		}
 		check[35]=valid;
@@ -5655,7 +5655,7 @@ bool XE::wrapAlderLakeNScanoutAllocate(IOService *fb) {
 	auto controller=static_cast<IOService *>(c.controller);
 	TGLFBBinding::Readout binding;
 	if(dual) {
-		binding=adlnInspectPathBinding(fb,Display13FBMemory::singlePath<OSObject *>(fb),callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring);
+		binding=adlnInspectPathBinding(fb,Display13FBMemory::singlePath<OSObject *>(fb),callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring,callbackXE->adlnInternalPanel);
 		pipe=binding.pipe;
 	}
 	record[12]=pipe;record[13]=static_cast<uint32_t>(binding.status);record[14]=dual;
@@ -5682,7 +5682,7 @@ bool XE::wrapAlderLakeNScanoutAllocate(IOService *fb) {
 		// before publishing an IRQ-visible identity or surface.
 		if(dual) {
 			const auto path=Display13FBMemory::singlePath<OSObject *>(fb);
-			const auto current=adlnInspectPathBinding(fb,path,callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring);
+			const auto current=adlnInspectPathBinding(fb,path,callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring,callbackXE->adlnInternalPanel);
 			allocated=allocated && current.status==TGLFBBinding::Status::Complete && current.pipe==pipe &&
 				current.ddi==binding.ddi && Display13FBMemory::identityAvailable(c.pipe,fb,pipe);
 			if(allocated) {
@@ -5725,7 +5725,7 @@ void XE::wrapAlderLakeNScanoutSetup(IOService *fb) {
 	IOWorkLoop *acquiredSwapGate=nullptr;OSObject *stopPath=nullptr;bool stopSwap=false;
 	IOLockLock(c.lock);
 	pipe=Display13FBMemory::boundPipe(c.pipe,fb);record[18]=pipe;
-	const auto binding=adlnInspectPathBinding(fb,Display13FBMemory::singlePath<OSObject *>(fb),callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring);
+	const auto binding=adlnInspectPathBinding(fb,Display13FBMemory::singlePath<OSObject *>(fb),callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring,callbackXE->adlnInternalPanel);
 	record[19]=static_cast<uint32_t>(binding.status);
 	if(callbackXE->display13FBMemoryHooksReady && pipe<3 && !c.pipe[pipe].destroyingPath && !c.memoryFaulted &&
 		(!Display13FBTopology::multiOutputWiring(callbackXE->adlnHDMIWiring) || (binding.status==TGLFBBinding::Status::Complete && binding.pipe==pipe))) {
@@ -5782,7 +5782,7 @@ void XE::wrapAlderLakeNScanoutSetup(IOService *fb) {
         swap[14]=1;
         reinterpret_cast<void (*)(IOService *,bool)>(callbackXE->adlnScanoutDisableFB)(fb,false);
         IOLockLock(c.lock);
-        const auto current=adlnInspectPathBinding(fb,Display13FBMemory::singlePath<OSObject *>(fb),callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring);
+        const auto current=adlnInspectPathBinding(fb,Display13FBMemory::singlePath<OSObject *>(fb),callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring,callbackXE->adlnInternalPanel);
         swap[15]=static_cast<uint32_t>(current.status);
         Display13FBIRQIO io {c.map->getVirtualAddress()};swap[16]=Display13FBIRQ::consumersStopped(io,1U<<pipe);
         admitted=current.status==TGLFBBinding::Status::Complete && current.pipe==pipe && current.ddi==binding.ddi &&
@@ -5801,7 +5801,7 @@ void XE::wrapAlderLakeNScanoutSetup(IOService *fb) {
 	IOLockLock(c.lock);
 	if(admitted) {
 		if(Display13FBTopology::multiOutputWiring(callbackXE->adlnHDMIWiring)) {
-			const auto current=adlnInspectPathBinding(fb,Display13FBMemory::singlePath<OSObject *>(fb),callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring);
+			const auto current=adlnInspectPathBinding(fb,Display13FBMemory::singlePath<OSObject *>(fb),callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring,callbackXE->adlnInternalPanel);
 			admitted=current.status==TGLFBBinding::Status::Complete && current.pipe==pipe && current.ddi==binding.ddi;
 			if(!admitted) {
 				r.status=Display13FBMemory::Status::Association;
@@ -5916,7 +5916,7 @@ void XE::adlnFreeStoppedPipe(IOService *fb) {
     const auto mask=controller ? Display13FBMemory::field<uint32_t>(controller,0xDF0) : 0;
     const auto surface=Display13FBMemory::field<uintptr_t>(fb,0x4348);
     const auto pool=slot<3 ? Display13FBMemory::pool(controller,slot) : Display13FBMemory::Pool {};
-    const auto binding=adlnInspectPathBinding(fb,Display13FBMemory::singlePath<OSObject *>(fb),callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring);
+    const auto binding=adlnInspectPathBinding(fb,Display13FBMemory::singlePath<OSObject *>(fb),callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring,callbackXE->adlnInternalPanel);
     bool pinned=false;for(const auto &stored:display13FBSysMem.slot)if(stored.framebuffer==fb && stored.buffer)pinned=true;
     const bool noResource=controller && slot==0xFF && !surface && !pinned &&
         Display13FBMemory::bitmapValid(count,used,mask) &&
@@ -6018,7 +6018,7 @@ void XE::wrapAlderLakeNFreePath(IOService *fb,OSObject *path) {
     fb->retain();path->retain();IORecursiveLockLock(mutex);
     uint64_t record[16] {1};bool released=false,detached=false;IOService *withdrawn=nullptr;
     IOLockLock(c.lock);const auto pipe=Display13FBMemory::boundPipe(c.pipe,fb);
-    const auto binding=adlnInspectPathBinding(fb,path,callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring);
+    const auto binding=adlnInspectPathBinding(fb,path,callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring,callbackXE->adlnInternalPanel);
     const bool selected=pipe<3 && binding.status==TGLFBBinding::Status::Complete && binding.pipe==pipe;
     record[1]=pipe;record[2]=selected;record[3]=binding.ddi;
     const auto countOffset=Display13FBMemory::pathCountOffset(fb);
@@ -6281,7 +6281,7 @@ void XE::adlnSetDualClock(IOService *controller,uint64_t nativeHz) {
             ready=map.valid && !(active&~published);
             for(unsigned p=0;p<3 && ready;++p)if(active&(1U<<p)) {
                 auto fb=frames[p];auto path=Display13FBMemory::singlePath<OSObject *>(fb);
-                const auto binding=adlnInspectPathBinding(fb,path,callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring);
+                const auto binding=adlnInspectPathBinding(fb,path,callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring,callbackXE->adlnInternalPanel);
                 ready=fb==c.pipe[p].memoryFramebuffer && !c.pipe[p].destroyingPath &&
                     TGLFBBinding::publish(paths[p],reinterpret_cast<uintptr_t>(fb),reinterpret_cast<uintptr_t>(path),binding,p);
             }
@@ -6433,7 +6433,7 @@ void XE::adlnWMSetup(OSObject *plane,OSObject *path,bool cursor) {
 		{plane,plane ? plane->getMetaClass()->getClassSize() : 0},
 		{port,port ? port->getMetaClass()->getClassSize() : 0},display13FBExpectedOwner(controller)
 	};
-	const auto binding=TGLFBBinding::inspect(objects,adlnNativePorts(callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring));
+	const auto binding=TGLFBBinding::inspect(objects,adlnNativePorts(callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring,callbackXE->adlnInternalPanel));
 	uint64_t bindingRecord[] {1,static_cast<uint32_t>(binding.status),binding.framebuffer,binding.pipe,binding.ddi,binding.plane,
 		binding.status==TGLFBBinding::Status::Complete ? Display13FBMemory::allocatedSlot(controller,fb) : UINT32_MAX};
 	const auto pipe=binding.status==TGLFBBinding::Status::Complete ? binding.pipe : UINT32_MAX;
@@ -6537,7 +6537,7 @@ void XE::wrapAlderLakeNPipeWMSetup(IOService *controller,IOService *fb,OSObject 
 	// memory ownership; programming still checks the published pipe owner.
 	auto port=associated ? Display13FBMemory::field<OSObject *>(path,0x3648) : nullptr;
 	auto config=port && port->getMetaClass()->getClassSize()>=0x580 ? Display13FBMemory::field<uint32_t *>(port,0x548) : nullptr;
-	const bool valid=associated && adlnSelectedPort(callbackXE->adlnPlatform,config,callbackXE->adlnHDMIWiring);
+	const bool valid=associated && adlnSelectedPort(callbackXE->adlnPlatform,config,callbackXE->adlnHDMIWiring,callbackXE->adlnInternalPanel);
 	auto scaler=valid ? Display13FBMemory::field<OSObject *>(path,0x32C0) : nullptr;
 	if(valid && scaler && scaler->getMetaClass()->getClassSize()>=0x58) {
 		// This CPU method is also called before memory/plane programming. Use
@@ -6577,7 +6577,7 @@ void XE::wrapAlderLakeNDisableDisplay(IOService *controller,IOService *fb,OSObje
 	if(c.lock && controller==c.controller && fb && fb->getMetaClass()->getClassSize()>=0x4B90 && path && path->getMetaClass()->getClassSize()>=0x3730) {
 		IOLockLock(c.lock);
 		pipe=Display13FBMemory::boundPipe(c.pipe,fb);
-		const auto binding=adlnInspectPathBinding(fb,path,callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring);
+		const auto binding=adlnInspectPathBinding(fb,path,callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring,callbackXE->adlnInternalPanel);
 		selected=pipe<3 && binding.status==TGLFBBinding::Status::Complete && binding.pipe==pipe &&
 			Display13FBMemory::field<uint32_t>(path,0x3644)==2 &&
 			!c.bridge.state.faulted && !c.clockFaulted && !(c.dbuf.updating&(1U<<pipe)) &&
@@ -6722,7 +6722,7 @@ Display13WM::Latch XE::adlnVerifyWMLatch(IOService *fb,uint64_t nativeHz,uint64_
 	Display13FBDBUFIO readout {c.map};const auto wells=readout.read(0x45404);
 	if(!Display13FBIRQ::powered(wells,pipe)) {result.status=Display13WM::Status::Power;return result;}
 	auto path=Display13FBMemory::singlePath<OSObject *>(fb);
-	const auto binding=adlnInspectPathBinding(fb,path,callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring);
+	const auto binding=adlnInspectPathBinding(fb,path,callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring,callbackXE->adlnInternalPanel);
 	const bool pathValid=binding.status==TGLFBBinding::Status::Complete && binding.pipe==pipe &&
 		display13FBAssociations(c.controller,0x1C20,fb,fb->getMetaClass()->getClassSize(),display13FBExpectedOwner(c.controller));
 	auto scaler=pathValid ? Display13FBMemory::field<OSObject *>(path,0x32C0) : nullptr;
@@ -6831,7 +6831,7 @@ void XE::wrapDisplay13WMArmUpdate(IOService *fb) {
 		if(mutex && c.engineEnabled && c.map && c.access && !c.memoryFaulted && !c.clockFaulted &&
 			!c.bridge.state.faulted && (owner || !c.pipe[pipe].wmCommitting)) {
 			path=Display13FBMemory::singlePath<OSObject *>(fb);
-			const auto binding=adlnInspectPathBinding(fb,path,callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring);
+			const auto binding=adlnInspectPathBinding(fb,path,callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring,callbackXE->adlnInternalPanel);
 			const bool associated=binding.status==TGLFBBinding::Status::Complete && binding.pipe==pipe &&
 				display13FBAssociations(c.controller,0x1C20,fb,fb->getMetaClass()->getClassSize(),display13FBExpectedOwner(c.controller)) &&
 				!Display13FBMemory::field<uint8_t>(fb,0x4A48) && adlnWriterMappingBound();
@@ -7193,7 +7193,7 @@ void XE::wrapAlderLakeNPrimaryDBUF(OSObject *plane,uint32_t start,uint32_t end,b
 	if(pipe>=3 || c.pipe[pipe].destroyingPath) {IOLockUnlock(c.lock);IORecursiveLockUnlock(mutex);return;}
 	Display13DBUF::Status status=Display13DBUF::Status::Unavailable;
 	auto path=fb ? Display13FBMemory::field<OSObject *>(plane,0x70) : nullptr;
-	const auto binding=adlnInspectPathBinding(fb,path,callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring);
+	const auto binding=adlnInspectPathBinding(fb,path,callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring,callbackXE->adlnInternalPanel);
 	const bool associated=binding.status==TGLFBBinding::Status::Complete && binding.pipe==pipe &&
 		Display13FBMemory::field<OSObject *>(path,0x32C8)==plane;
 	if(callbackXE->display13FBDBUFHooksReady && associated && c.engineEnabled &&
@@ -7212,7 +7212,7 @@ void XE::wrapAlderLakeNPrimaryDBUF(OSObject *plane,uint32_t start,uint32_t end,b
 			IOLockUnlock(c.lock);
 			FunctionCast(wrapAlderLakeNPrimaryDBUF,callbackXE->orgAlderLakeNPrimaryDBUF)(plane,start,end,wait);
 			IOLockLock(c.lock);
-			const auto current=adlnInspectPathBinding(fb,path,callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring);
+			const auto current=adlnInspectPathBinding(fb,path,callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring,callbackXE->adlnInternalPanel);
 			status=current.status==TGLFBBinding::Status::Complete && current.pipe==pipe && current.ddi==binding.ddi ?
 				Display13DBUF::finishPrimary(io,c.dbuf,pipe) : Display13DBUF::fail(c.dbuf,Display13DBUF::Status::Topology);
 			if(status==Display13DBUF::Status::Complete && Display13FBMemory::field<uint32_t>(plane,0x10C)!=Display13DBUF::pendingHardwareRaw(c.dbuf,pipe))
@@ -7243,7 +7243,7 @@ void XE::wrapAlderLakeNPlanarDBUFWrite(void *access,uint64_t reg,uint32_t value)
 	uint64_t record[14] {2,reg,value};auto status=Display13DBUF::Status::Unavailable;
 	auto path=Display13FBMemory::singlePath<OSObject *>(fb);
 	auto plane=path && path->getMetaClass()->getClassSize()>=0x3730 ? Display13FBMemory::field<OSObject *>(path,0x32C8) : nullptr;
-	const auto binding=adlnInspectPathBinding(fb,path,callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring);
+	const auto binding=adlnInspectPathBinding(fb,path,callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring,callbackXE->adlnInternalPanel);
 	const bool associated=plane && binding.status==TGLFBBinding::Status::Complete && binding.pipe==pipe &&
 		Display13FBMemory::boundPipe(c.pipe,fb)==pipe && Display13FBMemory::field<void *>(plane,0x90)==access && access==c.access &&
 		Display13FBMemory::field<uint32_t>(plane,0xA0)==reg && Display13FBMemory::field<uint32_t>(plane,0x10C)==value &&
@@ -7279,7 +7279,7 @@ void XE::wrapDisplay13CursorDBUF(OSObject *plane) {
 	const auto pipe=Display13FBMemory::boundPipe(c.pipe,fb);
 	if(pipe>=3 || c.pipe[pipe].destroyingPath) {IOLockUnlock(c.lock);IORecursiveLockUnlock(mutex);return;}
 	auto path=Display13FBMemory::field<OSObject *>(plane,0x70);
-	const auto binding=adlnInspectPathBinding(fb,path,callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring);
+	const auto binding=adlnInspectPathBinding(fb,path,callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring,callbackXE->adlnInternalPanel);
 	const bool associated=binding.status==TGLFBBinding::Status::Complete && binding.pipe==pipe &&
 		Display13FBMemory::field<OSObject *>(path,0x32C8)==plane;
 	if(callbackXE->display13FBDBUFHooksReady && callbackXE->display13FBWatermarkHooksReady && associated &&
@@ -7340,7 +7340,7 @@ void XE::adlnSetupDBUFPipe(IOService *controller,IOService *fb,unsigned pipe,boo
 	IORecursiveLockLock(mutex);IOLockLock(c.lock);
 	Display13DBUF::Layout layout;Display13DBUF::Range relativePrimary;OSObject *plane=nullptr;uint64_t record[18] {},resume[6] {};
 	auto path=Display13FBMemory::singlePath<OSObject *>(fb);
-	const auto binding=adlnInspectPathBinding(fb,path,callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring);
+	const auto binding=adlnInspectPathBinding(fb,path,callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring,callbackXE->adlnInternalPanel);
 	const bool associated=Display13FBMemory::boundPipe(c.pipe,fb)==pipe &&
 		binding.status==TGLFBBinding::Status::Complete && binding.pipe==pipe;
 	// A cold DDB demand may precede engine resume. Restore its clock/power
