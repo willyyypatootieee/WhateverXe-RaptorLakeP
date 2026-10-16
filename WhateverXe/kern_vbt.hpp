@@ -63,14 +63,18 @@ inline uint32_t ddi(Family family,uint32_t dvo) {
     const uint8_t hd[]={0,1,2,3,12,14,16,18,20};
     for(unsigned p=0;p<9;++p)if(dvo==dp[p] || dvo==hd[p]) {
         if(family==Family::TigerLake)return p==2 ? PortCount : p;
-        if(family==Family::AlderLakeN)return p<2 ? p : p>=5 ? p-2 : PortCount;
+        if(family==Family::AlderLakeN || family==Family::AlderLakeP)
+            return p<2 ? p : p>=5 ? p-2 : PortCount;
     }
     return PortCount;
 }
 inline Ports parse(const void *data,size_t length,Family family) {
     Ports r;
     if(!data || !length)return r;
-    if(family!=Family::TigerLake && family!=Family::AlderLakeN){r.status=Status::Platform;return r;}
+    // ADL-P 46A6 uses the same Display-13 Combo A/B port coordinates as the
+    // guarded ADL-N backend. Its runtime qualification remains separate; this
+    // only permits its firmware VBT to describe those physical ports.
+    if(family!=Family::TigerLake && family!=Family::AlderLakeN && family!=Family::AlderLakeP){r.status=Status::Platform;return r;}
     const auto p=static_cast<const uint8_t *>(data);r.status=Status::Header;
     if(length<48 || memcmp(p,"$VBT",4))return r;
     const size_t header=u16(p+22),size=u16(p+24),bdb=u32(p+28);

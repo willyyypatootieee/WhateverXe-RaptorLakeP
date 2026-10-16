@@ -26,7 +26,7 @@ int main(int argc,char **argv){
   return !r.valid();
  }
  // HDMI capabilities are authoritative even if firmware's DVO label is DP.
- for(auto family:{Family::TigerLake,Family::AlderLakeN})for(unsigned mask=1;mask<4;++mask)
+ for(auto family:{Family::TigerLake,Family::AlderLakeN,Family::AlderLakeP})for(unsigned mask=1;mask<4;++mask)
  for(unsigned a=1;a<=3;++a)for(unsigned b=1;b<=3;++b){
   std::vector<Port> p;if(mask&1)p.push_back({0x60d2,10,a,0,0,0});if(mask&2)p.push_back({0x60d2,7,b,0,0,0});
   auto bytes=table(p);auto r=parse(bytes.data(),bytes.size(),family);assert(r.valid());auto w=r.hdmi(3);
@@ -53,9 +53,10 @@ int main(int argc,char **argv){
  assert(r.tglDPCandidates(0x18)==0x10);
  auto shared=r;shared.present|=8;shared.port[3]={0x68c6,9,0,0x50};
  assert(!shared.tglDPCandidates(0x18));
- auto adl=table({{0x60d2,10,1},{0x60d2,7,2},{0x60d2,14,3}});
- auto a=parse(adl.data(),adl.size(),Family::AlderLakeN);assert(a.valid()&&a.present==0xB&&a.hdmi(3).hdmi==3);
- assert(ddi(Family::TigerLake,9)==3&&ddi(Family::AlderLakeN,13)==3&&ddi(Family::AlderLakeN,19)==6);
+  auto adl=table({{0x60d2,10,1},{0x60d2,7,2},{0x60d2,14,3}});
+  auto a=parse(adl.data(),adl.size(),Family::AlderLakeN);assert(a.valid()&&a.present==0xB&&a.hdmi(3).hdmi==3);
+  auto p=parse(adl.data(),adl.size(),Family::AlderLakeP);assert(p.valid()&&p.present==0xB&&p.hdmi(3).hdmi==3);
+  assert(ddi(Family::TigerLake,9)==3&&ddi(Family::AlderLakeN,13)==3&&ddi(Family::AlderLakeP,13)==3&&ddi(Family::AlderLakeN,19)==6);
  assert(ddi(Family::AlderLakeN,9)==PortCount&&ddi(Family::TigerLake,8)==PortCount);
  for(auto p:{Port{0x60d6,1,2},Port{0x78c6,10,1},Port{0x60d2,1,2,0,4},Port{0x60d2,1,2,0,2},Port{0x60d2,1,2,0,0,1}}){
   auto b=table({p});auto q=parse(b.data(),b.size(),Family::TigerLake);assert(q.valid()&&!q.hdmi(3).hdmi);
