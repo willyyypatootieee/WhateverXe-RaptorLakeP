@@ -208,8 +208,16 @@ int main() {
          assert(*reinterpret_cast<uint32_t *>(p+0x54+4*i)==(i==0?2U:0U));
      }
      assert(ok(b.putAUX(io,0)) && io.regs[AUX]==3 && ok(b.putAUX(io,0)) && !io.regs[AUX]);
-     assert(ok(b.adoptBootPath(0x1000,0,0)) && ok(b.putPG(io,1)) && ok(b.putDDI(io,0)) && io.regs[DDI]==12);
-     for(auto refs:b.state.refs)assert(!refs);}
+      assert(ok(b.adoptBootPath(0x1000,0,0)) && ok(b.putPG(io,1)) && ok(b.putDDI(io,0)) && io.regs[DDI]==12);
+      for(auto refs:b.state.refs)assert(!refs);}
+    // The exact eDP candidate retains an AUX_A lease with the existing DDI-A
+    // boot lease. It cannot be dropped before the verified handoff, and no
+    // other connector acquires a lease as a side effect.
+    {IO io;NativeBridge b;assert(ok(b.begin(io,0,1,true)) && b.bootPort==0 && b.bootAUXProtected &&
+       b.nativeDDIRefs(0)==1 && b.nativeAUXRefs(0)==1 && !b.nativeDDIBRefs());
+     assert(b.putAUX(io,0).status==Status::Unbalanced && b.getAUX(io,1).status==Status::InvalidDomains);
+     assert(ok(b.adoptBootPath(0x1000,0,0)) && !b.bootAUXProtected && ok(b.putAUX(io,0)) &&
+       ok(b.putDDI(io,0)) && ok(b.putPG(io,1)));for(auto refs:b.state.refs)assert(!refs);}
     // Dual admission does not acquire the second DDI on begin. Logical
     // nested references share one physical lease independently per port.
     {IO io;NativeBridge b;assert(ok(b.begin(io,1,3)) && io.writes.empty() && !b.ddiLease[0].owner);

@@ -47,11 +47,17 @@ int main() {
  for(unsigned bad=0;bad<5;++bad){auto x=c;if(bad==0)x.abi=1;if(bad==1)x.bytes--;
   if(bad==2)x.profile.display=Display::XeLPD;if(bad==3)x.legacy=x.typeC;if(bad==4)x.legacyBackend=1U<<9;
   assert(!x.valid());}
- c={};c.profile=identify(0x46D18086,0);c.combo=3;c.comboBackend=3;b.config=c;
+  c={};c.profile=identify(0x46D18086,0);c.combo=3;c.comboBackend=3;b.config=c;
  for(unsigned d=0;d<9;++d){auto r=reinterpret_cast<uint32_t *>(platform+0x20+24*d);
   const uint32_t v[]={d,d+1,2,0,0x800,0x202};__builtin_memcpy(r,v,sizeof(v));
   assert(probeMode(io,b,2,reinterpret_cast<uintptr_t>(r),r)==(d<2?1U:0U));}
- assert(io.reads.empty());auto other=b;other.access=3;assert(!b.sameBinding(other));assert(b.sameBinding(b));
+  assert(io.reads.empty());auto other=b;other.access=3;assert(!b.sameBinding(other));assert(b.sameBinding(b));
+  c={};c.profile=identify(0x46A68086,0x0c);c.internal=1;b.config=c;
+  auto panel=reinterpret_cast<uint32_t *>(platform+0x20);const uint32_t panelRecord[]={0,0,0,0,2,0x18};
+  __builtin_memcpy(panel,panelRecord,sizeof(panelRecord));
+  assert(probeMode(io,b,2,reinterpret_cast<uintptr_t>(panel),panel)==1);
+  panel[4]=0x800;assert(!probeMode(io,b,2,reinterpret_cast<uintptr_t>(panel),panel));panel[4]=2;
+  c.combo=1;assert(!c.valid());c.combo=0;c.internal=2;assert(!c.valid());
  // CPU association and power-consumer accounting are independent of transport.
  NativePorts ports {platform,(1U<<0)|(1U<<4)|(1U<<6)};
  assert(ports.bound(platform+0x20+24*4,4));assert(!ports.bound(platform+0x20+24*3,4));

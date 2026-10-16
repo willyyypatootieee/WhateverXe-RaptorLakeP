@@ -7,6 +7,10 @@
     "-adlpanypipe",
     "-n97adlpanypipe"
   ],
+  "-wex-adlp-edp": [
+    "-adlpedp",
+    "-n97adlpedp"
+  ],
   "-wex-adln-ctx-publish": [
     "-adlnctxpublish",
     "-n97ctxpublish"

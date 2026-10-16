@@ -84,7 +84,10 @@ private:
 	bool adlnKernelReady {false};
 	bool adlnNativeRequested {false};
 	bool adlnNativeReady {false};
+	bool adlnFramebufferReady {false};
 	bool adlnPanelObservation {false};
+	bool adlnInternalPanel {false};
+	bool adlnInternalPanelRequested {false};
 	bool display13FramebufferRequested {false};
 	bool display13FBPowerReferencesReady {false};
 	bool display13FBClockReadoutHooksReady {false};

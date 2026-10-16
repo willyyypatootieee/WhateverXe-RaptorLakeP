@@ -27,6 +27,15 @@ int main() {
     }
     assert(output.config(1)[1]==2 && output.config(1)[2]==2 && output.config(1)[4]==0x800 && output.config(1)[5]==0x202);
     assert(excludedTypeC(output.data(),Bytes,wiring)==0x3F000000);
+    Platform panelOutput;
+    assert(applyInternalPanel(panelOutput.data(),Bytes,input.data()));
+    assert(selectedInternalPanel(panelOutput.data(),panelOutput.config(0)));
+    assert(boundInternalPanel(panelOutput.data()).valid() && boundInternalPanel(panelOutput.data()).selected==1);
+    assert(internalExcludedTypeC(panelOutput.data(),Bytes)==0x3F000000);
+    for(unsigned d=1;d<Ports;++d)assert(panelOutput.config(d)[0]==d && panelOutput.config(d)[4]==1 && !panelOutput.config(d)[5]);
+    auto badPanel=input;badPanel.config(0)[5]=0x19;auto panelSentinel=panelOutput;
+    assert(!applyInternalPanel(panelOutput.data(),Bytes,badPanel.data()) && !memcmp(panelOutput.data(),panelSentinel.data(),Bytes));
+    badPanel=panelOutput;badPanel.config(4)[5]=2;assert(!internalExcludedTypeC(badPanel.data(),Bytes));
     auto activeTC=output;activeTC.config(3)[4]=0x400;
     assert(!excludedTypeC(activeTC.data(),Bytes,wiring));
     activeTC=output;activeTC.config(8)[5]=0x201;

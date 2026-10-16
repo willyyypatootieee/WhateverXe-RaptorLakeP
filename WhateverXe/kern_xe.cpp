@@ -2599,6 +2599,9 @@ void XE::selectProfile(const XELP::Profile &profile) {
     xeProfile=profile;
     adlnNativeRCSProfileRequested=false;
     adlnPanelObservation=false;
+    adlnInternalPanel=false;
+    adlnInternalPanelRequested=false;
+    adlnFramebufferReady=false;
     adlnRequested=profile.admitted() && profile.display==XELP::Display::XeLPD &&
         ((profile.family==XELP::Family::AlderLakeN && profile.gt==XELP::GT::ADLNSmall) ||
          (profile.family==XELP::Family::AlderLakeP && profile.gt==XELP::GT::ADLPGT2));
@@ -2607,6 +2610,11 @@ void XE::selectProfile(const XELP::Profile &profile) {
     if(adlnRequested) {
         adlnKernelReady=!strcmp(version,"Darwin Kernel Version 20.6.0: Thu Jul  6 22:12:47 PDT 2023; root:xnu-7195.141.49.702.12~1/RELEASE_X86_64");
         adlnNativeRequested=adlnKernelReady;
+        // An eDP accelerator attempt must be deliberate. The old observation
+        // argument retains its framebuffer-only behaviour and cannot become
+        // native merely because its VBT happens to match this panel.
+        adlnInternalPanelRequested=adlnNativeRequested && xeProfile.family==XELP::Family::AlderLakeP &&
+            checkKernelArgument("-wex-adlp-edp");
         display13FramebufferRequested=adlnKernelReady;
         adlnNativeRCSProfileRequested=adlnNativeRequested && !checkKernelArgument("-wex-adln-kernel-ctx");
         display13TraceEnabled=display13FramebufferRequested && checkKernelArgument("-wex-display13-trace");
@@ -2656,11 +2664,13 @@ void XE::adlnBootstrap(IOPCIDevice *pci) {
 	uint64_t panelRoute[] {1,panel.valid,panel.ddi,panel.ddc,panel.aux,panel.type,panel.flags};
 	pci->setProperty("N97NativePanelRouting",panelRoute,sizeof(panelRoute));
 	const bool hdmiRoute=Display13FBTopology::supportedWiring(board);
-	adlnPanelObservation=adlnNativeRequested && !hdmiRoute && panel.valid;
-	if(adlnNativeRequested && !hdmiRoute && !adlnPanelObservation) {
+	adlnInternalPanel=adlnNativeRequested && !hdmiRoute && panel.valid && adlnInternalPanelRequested;
+	adlnPanelObservation=adlnNativeRequested && !hdmiRoute && panel.valid && !adlnInternalPanel;
+	if(adlnNativeRequested && !hdmiRoute && !adlnPanelObservation && !adlnInternalPanel) {
 		pci->setProperty("N97NativeRoutingUnavailable",true);return;
 	}
 	if(adlnPanelObservation)pci->setProperty("N97NativePanelObservation",true);
+	if(adlnInternalPanel)pci->setProperty("N97NativePanelCandidate",true);
 	auto bootDDI=adlnNativeRequested ? UINT32_MAX : 1U;
 	uint64_t connector[] {1,adlnNativeRequested,wiring!=nullptr,board.valid,board.hdmi,bootDDI};
 	pci->setProperty("N97NativeBootConnector",connector,sizeof(connector));
@@ -2716,13 +2726,13 @@ void XE::adlnBootstrap(IOPCIDevice *pci) {
 		const auto measuredPipe=Display13FBTopology::bootstrapPipe(
 			result.status==AlderLakeN::ReadoutStatus::Complete,result.poweredPipes,result.activePipes);
 		if(measuredPipe<3 && AlderLakeN::value(result,0x60400+0x1000*measuredPipe,trans)) {
-			if(adlnPanelObservation)bootDDI=Display13FBTopology::panelBootDDI(panel.valid,panel.ddi,
+			if(adlnPanelObservation || adlnInternalPanel)bootDDI=Display13FBTopology::panelBootDDI(panel.valid,panel.ddi,
 				result.status==AlderLakeN::ReadoutStatus::Complete,result.poweredPipes,result.activePipes,trans);
 			else bootDDI=Display13FBTopology::bootstrapDDI(board,
 				result.status==AlderLakeN::ReadoutStatus::Complete,result.poweredPipes,result.activePipes,trans);
 		}
 		connector[5]=bootDDI;pci->setProperty("N97NativeBootConnector",connector,sizeof(connector));
-		if(adlnPanelObservation) {
+		if(adlnPanelObservation || adlnInternalPanel) {
 			uint64_t panelBoot[] {1,bootDDI<3,measuredPipe,bootDDI,
 				result.poweredPipes,result.activePipes,trans};
 			pci->setProperty("N97NativePanelBoot",panelBoot,sizeof(panelBoot));
@@ -2732,7 +2742,7 @@ void XE::adlnBootstrap(IOPCIDevice *pci) {
 	SYSLOG("igfx", "AlderLakeN Display13 readout status=%u powered=%x active=%x hdmiB=%x; donor blocked",
 		static_cast<uint32_t>(result.status), result.poweredPipes, result.activePipes, result.hdmiBPipes);
 	if (linearTest) {
-		auto linear=adlnPanelObservation ? AlderLakeN::reinitializeInternalPanel(io,result,
+		auto linear=(adlnPanelObservation || adlnInternalPanel) ? AlderLakeN::reinitializeInternalPanel(io,result,
 			barReady && xelpMemoryMatches(pci) && bootDDI==0) :
 			AlderLakeN::reinitializeLinear(io,result,barReady && xelpMemoryMatches(pci),bootDDI);
 		pci->setProperty("N97Display13Linear",&linear,sizeof(linear));
@@ -2849,16 +2859,17 @@ void XE::adlnBootstrap(IOPCIDevice *pci) {
 				((!optionProperty || opts) && !mapperOptions && !systemMapper);
 			uint64_t mapperAdmission[] {1,mapperOptions,systemMapper,physicalOptions};
 			IORegistryEntry::getRegistryRoot()->setProperty("N97NativeMapperAdmission",mapperAdmission,sizeof(mapperAdmission));
-			const auto planStatus=AlderLakeN::linearPlan(display,plan,bootDDI);
+			const auto planStatus=(adlnPanelObservation || adlnInternalPanel) ?
+				AlderLakeN::internalPanelPlan(display,plan) : AlderLakeN::linearPlan(display,plan,bootDDI);
 			// The original Display-13 bring-up only admitted the firmware's pipe A
 			// scanout. A fixed external connector may legitimately be booted on B
 			// or C, so permit that tested physical topology only when explicitly
 			// requested for the strict 46A6 D0 profile. The ordinary path remains
 			// pipe A-only until each board's lifecycle is validated.
-			const bool alternatePipe=xelpAlderLakePDevice(pci) &&
+			const bool alternatePipe=!adlnInternalPanel && xelpAlderLakePDevice(pci) &&
 				checkKernelArgument("-wex-adlp-any-pipe");
 			const bool pipeReady=planStatus==AlderLakeN::LinearStatus::Ready &&
-				(plan.pipe==0 || alternatePipe);
+				(adlnInternalPanel ? (bootDDI==0 && plan.pipe==0) : (plan.pipe==0 || alternatePipe));
 			bool prefix=bootstrapReady && pipeReady &&
 				xelpMemory.range(plan.surface,AlderLakeN::ScanoutBytes,true);
 			for (unsigned i=0;prefix && i<xelpMemory.bytes/4096;++i)
@@ -2871,11 +2882,12 @@ void XE::adlnBootstrap(IOPCIDevice *pci) {
 			const bool pciReady=(pci->configRead16(4)&6)==6;
 			const bool argumentsReady=checkKernelArgument("-allow3d") && checkKernelArgument("-disablegfxfirmware");
 			const bool diagnosticsIdle=!checkKernelArgument("-wex-adln-scanout") && !checkKernelArgument("-wex-adln-gpu");
-			adlnNativeReady=!adlnPanelObservation && topologyReady && edramReady && prefix && apertureReady && pageReady &&
+			const bool panelPolicy=xeProfile.family!=XELP::Family::AlderLakeP || adlnInternalPanel;
+			adlnNativeReady=!adlnPanelObservation && panelPolicy && topologyReady && edramReady && prefix && apertureReady && pageReady &&
 				physicalOptions && pciReady && argumentsReady && diagnosticsIdle;
-			uint64_t preflight[] {2,topologyReady,edramReady,bootstrapReady,
+			uint64_t preflight[] {3,topologyReady,edramReady,bootstrapReady,
 				static_cast<uint32_t>(planStatus),plan.pipe,bootDDI,alternatePipe,pipeReady,prefix,
-				apertureReady,pageReady,physicalOptions,pciReady,argumentsReady,diagnosticsIdle,adlnPanelObservation,adlnNativeReady};
+				apertureReady,pageReady,physicalOptions,pciReady,argumentsReady,diagnosticsIdle,adlnPanelObservation,adlnInternalPanel,panelPolicy,adlnNativeReady};
 			pci->setProperty("N97NativePreflightDetail",preflight,sizeof(preflight));
 			pci->setProperty("N97NativePreflight",adlnNativeReady);
 			pci->setProperty("N97NativeReservedGGTT",prefix);
@@ -2946,9 +2958,12 @@ bool XE::xelpBindProbe(void *controller) {
         config.legacy=tglTCProbeMask();config.typeC=tglTCWiring.typeC;config.excluded=tglTCWiring.excluded;
         config.legacyBackend=tglAUXParentMask;
     } else {
-        if(!display13FBTopologyHooksReady || controller!=adlnTopologyController ||
-            !Display13FBTopology::supportedWiring(adlnHDMIWiring))return false;
-        config.combo=adlnHDMIWiring.hdmi;config.comboBackend=3;
+        if(!display13FBTopologyHooksReady || controller!=adlnTopologyController)return false;
+        if(adlnInternalPanel)config.internal=1;
+        else {
+            if(!Display13FBTopology::supportedWiring(adlnHDMIWiring))return false;
+            config.combo=adlnHDMIWiring.hdmi;config.comboBackend=3;
+        }
     }
     const bool bound=config.valid() && reinterpret_cast<XELP::ConfigureProbe>(xelpProviderConfigureProbe)(controller,&config);
     IORegistryEntry::getRegistryRoot()->setProperty("XELPSharedProbeBound",bound);
@@ -3237,6 +3252,14 @@ static bool display13FBAssociations(const void *controller,size_t controllerByte
  const auto surface=Display13FBMemory::field<uintptr_t>(fb,0x4348);
  return Display13FBMemory::publishedSurface(display13FBPower.pipe,fb,surface);
 }
+static XELP::NativePorts adlnNativePorts(const void *platform,const Display13HDMIWiring &wiring) {
+	return callbackXE && callbackXE->adlnInternalPanel ? Display13FBTopology::boundInternalPanel(platform) :
+		Display13FBTopology::boundPorts(platform,wiring);
+}
+static bool adlnSelectedPort(const void *platform,const void *config,const Display13HDMIWiring &wiring) {
+	return callbackXE && callbackXE->adlnInternalPanel ? Display13FBTopology::selectedInternalPanel(platform,config) :
+		Display13FBTopology::selected(platform,config,wiring);
+}
 
 // Revalidate the current native path rather than the initial GOP path. The
 // framebuffer mutex and display-owner lock keep its graph stable; retained FB
@@ -3253,7 +3276,7 @@ static TGLFBBinding::Readout adlnInspectPathBinding(IOService *fb,OSObject *path
 		{path,path->getMetaClass()->getClassSize()}, {plane,plane ? plane->getMetaClass()->getClassSize() : 0},
 		{port,port ? port->getMetaClass()->getClassSize() : 0}, display13FBExpectedOwner(controller)
 	};
-	return TGLFBBinding::inspect(objects,platform,wiring,true);
+	return TGLFBBinding::inspect(objects,adlnNativePorts(platform,wiring),true);
 }
 
 
@@ -4200,8 +4223,9 @@ bool XE::processDisplay13FramebufferIRQ(KernelPatcher &patcher,size_t index,mach
 IOReturn XE::wrapDisplay13FBEnableIRQ(IOService *controller) {
 	if(!callbackXE->display13FBIRQReady || !adlnIRQOwner(controller))return kIOReturnNotReady;
 	auto &c=display13FBIRQ;uint64_t record[32] {},check[42] {3};Display13FBIRQIO io {c.base};
-	const auto excluded=controller==callbackXE->adlnTopologyController ?
-		Display13FBTopology::excludedTypeC(callbackXE->adlnPlatform,sizeof(callbackXE->adlnPlatform),callbackXE->adlnHDMIWiring) : 0;
+	const auto excluded=controller==callbackXE->adlnTopologyController ? (callbackXE->adlnInternalPanel ?
+		Display13FBTopology::internalExcludedTypeC(callbackXE->adlnPlatform,sizeof(callbackXE->adlnPlatform)) :
+		Display13FBTopology::excludedTypeC(callbackXE->adlnPlatform,sizeof(callbackXE->adlnPlatform),callbackXE->adlnHDMIWiring)) : 0;
 	const auto saved=IOSimpleLockLockDisableInterrupt(c.lock);
 	// Preserve enable evidence even when start rejects its unpublished
 	// controller. Inspect only pipe banks already qualified as powered.
@@ -4216,13 +4240,14 @@ IOReturn XE::wrapDisplay13FBEnableIRQ(IOService *controller) {
 	check[17]=io.read(0xC400C);check[18]=io.read(0xC4004);
 	constexpr uint32_t otherBanks[] {0x44448,0x44468,0x44478,0x44488};
 	for(unsigned i=0;i<4;++i)check[19+i]=io.read(otherBanks[i]+4)&~io.read(otherBanks[i]-4);
-	if(Display13FBTopology::multiOutputWiring(callbackXE->adlnHDMIWiring)) {
+	if(!callbackXE->adlnInternalPanel && Display13FBTopology::multiOutputWiring(callbackXE->adlnHDMIWiring)) {
 		const auto admitted=__atomic_load_n(&c.admittedPipes,__ATOMIC_ACQUIRE);
 		const auto actual=Display13FBIRQ::readActivePipes(io,admitted);
 		c.status=c.quiescing ? Display13FBIRQ::Status::Power : actual.status;
 		if(c.status==Display13FBIRQ::Status::Complete)c.status=c.state.begun && c.state.enabled ?
 			Display13FBIRQ::extendActivePipes(io,c.state,admitted) : Display13FBIRQ::enable(io,c.state,excluded,adlnSharedGT(controller),actual.active,callbackXE->adlnHDMIWiring.hdmi);
-	} else c.status=c.quiescing ? Display13FBIRQ::Status::Power : Display13FBIRQ::enable(io,c.state,excluded,adlnSharedGT(controller),1,callbackXE->adlnHDMIWiring.hdmi);
+	} else c.status=c.quiescing ? Display13FBIRQ::Status::Power : Display13FBIRQ::enable(io,c.state,excluded,adlnSharedGT(controller),1,
+		callbackXE->adlnInternalPanel ? 1U : callbackXE->adlnHDMIWiring.hdmi);
 	adlnIRQCache(controller,io);adlnIRQRecord(record,1);
 	check[23]=static_cast<uint32_t>(c.status);check[24]=c.state.begun;
 	check[25]=c.state.enabled;check[26]=c.state.faulted;check[27]=c.state.active;check[28]=c.state.configured;
@@ -4258,23 +4283,25 @@ void XE::wrapDisplay13FBConfigureVBL(IOService *controller,IOService *fb,OSObjec
 	const bool valid=display13FBAssociations(controller,0x1C20,fb,fb->getMetaClass()->getClassSize(),display13FBExpectedOwner(controller)) &&
 		path->getMetaClass()->getClassSize()>=0x3730;
 	const auto pipe=valid ? Display13FBMemory::field<uint32_t>(path,0x3640) : 3;
-	if(Display13FBTopology::multiOutputWiring(callbackXE->adlnHDMIWiring) && (c.quiescing || (pipe<3 && (c.blockedPipes&(1U<<pipe))))) {
+	if(!callbackXE->adlnInternalPanel && Display13FBTopology::multiOutputWiring(callbackXE->adlnHDMIWiring) && (c.quiescing || (pipe<3 && (c.blockedPipes&(1U<<pipe))))) {
 		c.status=Display13FBIRQ::Status::Power;adlnIRQCache(controller,io);
 		if(getLock)IOSimpleLockUnlockEnableInterrupt(c.lock,saved);return;
 	}
 	if(valid && pipe<3 && !(c.blockedPipes&(1U<<pipe))) {
-		if(Display13FBTopology::multiOutputWiring(callbackXE->adlnHDMIWiring) && enabled && !c.quiescing) {
+		if(!callbackXE->adlnInternalPanel && Display13FBTopology::multiOutputWiring(callbackXE->adlnHDMIWiring) && enabled && !c.quiescing) {
 			const auto admitted=__atomic_load_n(&c.admittedPipes,__ATOMIC_ACQUIRE);
 			c.status=(admitted&(1U<<pipe)) ? Display13FBIRQ::extendActivePipes(io,c.state,admitted) : Display13FBIRQ::Status::Topology;
 			if(c.status!=Display13FBIRQ::Status::Complete) {adlnIRQCache(controller,io);if(getLock)IOSimpleLockUnlockEnableInterrupt(c.lock,saved);return;}
 		}
 		// Native enablePipe enables PIPECONF before this VBL callback. Re-arm
 		// the full pipe bank only at that real activation boundary after idle HPD.
-		if(!Display13FBTopology::multiOutputWiring(callbackXE->adlnHDMIWiring) && enabled && c.state.begun && c.state.enabled && !c.state.active && !c.state.faulted &&
+		if((callbackXE->adlnInternalPanel || !Display13FBTopology::multiOutputWiring(callbackXE->adlnHDMIWiring)) && enabled && c.state.begun && c.state.enabled && !c.state.active && !c.state.faulted &&
 			Display13FBIRQ::powered(io.read(Display13FBIRQ::Driver),pipe) && (io.read(0x70008+0x1000*pipe)&Display13FBIRQ::Enable)) {
-			const auto excluded=controller==callbackXE->adlnTopologyController ?
-				Display13FBTopology::excludedTypeC(callbackXE->adlnPlatform,sizeof(callbackXE->adlnPlatform),callbackXE->adlnHDMIWiring) : 0;
-			c.status=Display13FBIRQ::enable(io,c.state,excluded,adlnSharedGT(controller),1,callbackXE->adlnHDMIWiring.hdmi);
+			const auto excluded=controller==callbackXE->adlnTopologyController ? (callbackXE->adlnInternalPanel ?
+				Display13FBTopology::internalExcludedTypeC(callbackXE->adlnPlatform,sizeof(callbackXE->adlnPlatform)) :
+				Display13FBTopology::excludedTypeC(callbackXE->adlnPlatform,sizeof(callbackXE->adlnPlatform),callbackXE->adlnHDMIWiring)) : 0;
+			c.status=Display13FBIRQ::enable(io,c.state,excluded,adlnSharedGT(controller),1,
+				callbackXE->adlnInternalPanel ? 1U : callbackXE->adlnHDMIWiring.hdmi);
 		}
 		if(!c.state.faulted)c.status=Display13FBIRQ::vblank(io,c.state,pipe,enabled);
 	}
@@ -4779,10 +4806,11 @@ bool XE::processDisplay13FramebufferTopology(KernelPatcher &patcher,size_t index
 bool XE::wrapAlderLakeNGetOSInformation(IOService *controller) {
 	auto s=callbackXE;
 	if(!s->display13FBTopologyHooksReady || !controller || controller->getMetaClass()->getClassSize()<0x1C20 ||
-		!Display13FBTopology::supportedWiring(s->adlnHDMIWiring) || !checkKernelArgument("-disablegfxfirmware"))return false;
+		(!s->adlnInternalPanel && !Display13FBTopology::supportedWiring(s->adlnHDMIWiring)) || !checkKernelArgument("-disablegfxfirmware"))return false;
 	if(!FunctionCast(wrapAlderLakeNGetOSInformation,s->orgAlderLakeNGetOSInformation)(controller))return false;
 	auto platform=Display13FBMemory::field<void *>(controller,0xD40);
-	if(!Display13FBTopology::apply(s->adlnPlatform,sizeof(s->adlnPlatform),platform,s->adlnHDMIWiring))return false;
+	if(s->adlnInternalPanel ? !Display13FBTopology::applyInternalPanel(s->adlnPlatform,sizeof(s->adlnPlatform),platform) :
+		!Display13FBTopology::apply(s->adlnPlatform,sizeof(s->adlnPlatform),platform,s->adlnHDMIWiring))return false;
     const auto nativePool=Display13FBMemory::field<uint32_t>(controller,0xDE8);
     const auto profilePool=Display13FBMemory::field<uint32_t>(s->adlnPlatform,0x14);
     const auto requested=s->framebufferPatchFlags.bits.FPFStolenMemorySize ? s->framebufferPatch.fStolenMemorySize : 0;
@@ -4796,7 +4824,8 @@ bool XE::wrapAlderLakeNGetOSInformation(IOService *controller) {
 	memcpy(reinterpret_cast<uint8_t *>(controller)+0xD40,&copy,sizeof(copy));
 	// The donor's default DC6 mode1 uploads its AX/B0 CSR program at80000.
 	// It is not ADL-N DMC firmware. Use the native dc6config=0 policy before
-	// hwInitializeCState; HDMI scanout does not require a DMC/PSR program.
+	// hwInitializeCState; the retained firmware panel is not a license to load
+	// that unrelated CSR/PSR program.
 	uint32_t dcPolicy[] {Display13FBMemory::field<uint32_t>(controller,0xB48),0};
 	memcpy(reinterpret_cast<uint8_t *>(controller)+0xB48,&dcPolicy[1],sizeof(uint32_t));
 	s->adlnTopologyController=controller;
@@ -4809,7 +4838,8 @@ uint32_t XE::wrapAlderLakeNPortState(OSObject *port) {
 	auto s=callbackXE;
 	if(!s->display13FBTopologyHooksReady || !s->adlnTopologyController || !port || port->getMetaClass()->getClassSize()<0x580)return 0;
 	auto config=Display13FBMemory::field<uint32_t *>(port,0x548);
-	if(Display13FBTopology::selected(s->adlnPlatform,config,s->adlnHDMIWiring)) {
+	if((s->adlnInternalPanel ? Display13FBTopology::selectedInternalPanel(s->adlnPlatform,config) :
+		adlnSelectedPort(s->adlnPlatform,config,s->adlnHDMIWiring))) {
         // CPU binding only. TC bits are added when mode/AUX/PLL/GOP become
         // qualified together; a board description alone is insufficient.
         if(!s->xelpBindProbe(s->adlnTopologyController)) {
@@ -4829,7 +4859,7 @@ uint32_t XE::wrapAlderLakeNPortState(OSObject *port) {
     }
 	// Deliberately excluded connector policy. Do not enter TC/AUX hardware
 	// probing, and do not substitute a connected result for the selected port.
-	for(unsigned d=0;d<Display13FBTopology::Ports;++d)if(!(s->adlnHDMIWiring.hdmi&(1U<<d)) && Display13FBTopology::bound(s->adlnPlatform,config,d)) {
+	for(unsigned d=0;d<Display13FBTopology::Ports;++d)if((s->adlnInternalPanel ? d!=0 : !(s->adlnHDMIWiring.hdmi&(1U<<d))) && Display13FBTopology::bound(s->adlnPlatform,config,d)) {
 		*reinterpret_cast<uint32_t *>(reinterpret_cast<uint8_t *>(port)+0x554)=0;return 0;
 	}
 	return 0;
@@ -5326,7 +5356,7 @@ uint32_t XE::wrapDisplay13FBDDC(IOService *fb,int connection,uint32_t block,uint
 }
 uint32_t XE::wrapAlderLakeNPortDDC(OSObject *port,uint32_t block,uint8_t *data,bool force) {
     auto config=Display13FBMemory::field<uint32_t *>(port,0x548);
-    const bool selected=Display13FBTopology::selected(callbackXE->adlnPlatform,config,callbackXE->adlnHDMIWiring);
+    const bool selected=adlnSelectedPort(callbackXE->adlnPlatform,config,callbackXE->adlnHDMIWiring);
     uint64_t r[8] {1,block,force,0,0,config ? config[0] : 9};
     auto root=IORegistryEntry::getRegistryRoot();if(selected)root->setProperty("N97FBPortDDCEntry",r,sizeof(r));
     const auto result=FunctionCast(wrapAlderLakeNPortDDC,callbackXE->orgAlderLakeNPortDDC)(port,block,data,force);r[3]=result;
@@ -5442,18 +5472,20 @@ bool XE::wrapDisplay13FramebufferStart(IOService *that,IOService *provider) {
 		pci && xelpDisplay13Device(pci);
 	that->setProperty("N97FramebufferBackendReady",ready);
 	if(!ready)return false;
-	auto property=provider->getProperty("xelp-hdmi-wiring");
-    if(!property)property=provider->getProperty("tgl-hdmi-wiring");
-    auto wiring=OSDynamicCast(OSData,property);
-    s->adlnHDMIWiring=XELP::VBT::selectHDMI(property!=nullptr,wiring?wiring->getBytesNoCopy():nullptr,
-        wiring?wiring->getLength():0,s->firmwarePorts,3);
-    if(!Display13FBTopology::supportedWiring(s->adlnHDMIWiring))return false;
+	if(!s->adlnInternalPanel) {
+		auto property=provider->getProperty("xelp-hdmi-wiring");
+        if(!property)property=provider->getProperty("tgl-hdmi-wiring");
+        auto wiring=OSDynamicCast(OSData,property);
+        s->adlnHDMIWiring=XELP::VBT::selectHDMI(property!=nullptr,wiring?wiring->getBytesNoCopy():nullptr,
+            wiring?wiring->getLength():0,s->firmwarePorts,3);
+        if(!Display13FBTopology::supportedWiring(s->adlnHDMIWiring))return false;
+    } else if(!s->firmwarePorts.internalPanel().valid)return false;
 	const bool dualReady=s->adlnNativeReady && s->adlnScanoutDisableFB && s->orgAlderLakeNSysMemAllocate && s->orgAlderLakeNSysMemFree &&
 		(!adlnFixedSysMemEnabled || display13FBSysMem.lock) && display13FBSysMem.retireLock && s->adlnWorkLoopInGate && s->adlnWorkLoopTryClose && s->adlnWorkLoopOpen;
-	uint64_t dualPolicy[] {1,s->adlnHDMIWiring.hdmi,dualReady,s->adlnNativeReady,s->adlnScanoutDisableFB!=0,
+	uint64_t dualPolicy[] {2,s->adlnInternalPanel,s->adlnHDMIWiring.hdmi,dualReady,s->adlnNativeReady,s->adlnScanoutDisableFB!=0,
 		s->orgAlderLakeNSysMemAllocate!=0,s->orgAlderLakeNSysMemFree!=0,display13FBSysMem.lock!=nullptr,display13FBSysMem.retireLock!=nullptr,adlnFixedSysMemEnabled};
 	IORegistryEntry::getRegistryRoot()->setProperty("N97FramebufferDualPolicy",dualPolicy,sizeof(dualPolicy));
-	if(Display13FBTopology::multiOutputWiring(s->adlnHDMIWiring) && !dualReady)return false;
+	if(!s->adlnInternalPanel && Display13FBTopology::multiOutputWiring(s->adlnHDMIWiring) && !dualReady)return false;
 	// Native provider-workloop mode creates/binds the PCI interrupt source in
 	// controller start, rather than waiting for an accelerator or FB open.
 	auto old=OSDynamicCast(OSDictionary,that->getProperty("FeatureControl"));
@@ -5472,7 +5504,8 @@ bool XE::wrapDisplay13FramebufferStart(IOService *that,IOService *provider) {
 		irqEnabled=display13FBIRQ.state.enabled && !display13FBIRQ.state.faulted;
 		IOSimpleLockUnlockEnableInterrupt(display13FBIRQ.lock,saved);
 	}
-	const bool accepted=started && irqEnabled && display13FBPower.bridge.begun && display13FBPower.bridge.bootAdopted && !display13FBPower.bridge.state.faulted &&
+	const bool panelAUX=!s->adlnInternalPanel || display13FBPower.bridge.nativeAUXRefs(0)>0;
+	const bool accepted=started && irqEnabled && panelAUX && display13FBPower.bridge.begun && display13FBPower.bridge.bootAdopted && !display13FBPower.bridge.state.faulted &&
 		!display13FBPower.clockFaulted && !display13FBPower.memoryFaulted && display13FBPower.engineEnabled &&
 		!display13FBPower.dbuf.faulted && !display13FBPower.dbuf.updating && !display13FBPower.watermarkFaulted &&
 		display13FBPower.latency.status==Display13WM::Status::Complete;
@@ -5487,6 +5520,8 @@ bool XE::wrapDisplay13FramebufferStart(IOService *that,IOService *provider) {
    that->setProperty("N97GTPowerSample",power);power->release();
   }
  }
+	s->adlnFramebufferReady=accepted;
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FramebufferPanelAUX",panelAUX);
 	IORegistryEntry::getRegistryRoot()->setProperty("N97FramebufferStartAccepted",accepted);
 	return accepted;
 }
@@ -5580,7 +5615,7 @@ void XE::wrapAlderLakeNSetupWorkLoop(IOService *controller,IOWorkLoop *workLoop)
 		if(valid) {
 			auto config=Display13FBMemory::field<uint32_t *>(port,0x548);
 			valid=Display13FBTopology::bound(callbackXE->adlnPlatform,config,c.bridge.bootPort) &&
-				Display13FBTopology::selected(callbackXE->adlnPlatform,config,callbackXE->adlnHDMIWiring) &&
+				adlnSelectedPort(callbackXE->adlnPlatform,config,callbackXE->adlnHDMIWiring) &&
 				Display13Power::objectAssociations(c.power,0x80,controller,0x1C20);
 		}
 		check[35]=valid;
@@ -6398,7 +6433,7 @@ void XE::adlnWMSetup(OSObject *plane,OSObject *path,bool cursor) {
 		{plane,plane ? plane->getMetaClass()->getClassSize() : 0},
 		{port,port ? port->getMetaClass()->getClassSize() : 0},display13FBExpectedOwner(controller)
 	};
-	const auto binding=TGLFBBinding::inspect(objects,callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring);
+	const auto binding=TGLFBBinding::inspect(objects,adlnNativePorts(callbackXE->adlnPlatform,callbackXE->adlnHDMIWiring));
 	uint64_t bindingRecord[] {1,static_cast<uint32_t>(binding.status),binding.framebuffer,binding.pipe,binding.ddi,binding.plane,
 		binding.status==TGLFBBinding::Status::Complete ? Display13FBMemory::allocatedSlot(controller,fb) : UINT32_MAX};
 	const auto pipe=binding.status==TGLFBBinding::Status::Complete ? binding.pipe : UINT32_MAX;
@@ -6502,7 +6537,7 @@ void XE::wrapAlderLakeNPipeWMSetup(IOService *controller,IOService *fb,OSObject 
 	// memory ownership; programming still checks the published pipe owner.
 	auto port=associated ? Display13FBMemory::field<OSObject *>(path,0x3648) : nullptr;
 	auto config=port && port->getMetaClass()->getClassSize()>=0x580 ? Display13FBMemory::field<uint32_t *>(port,0x548) : nullptr;
-	const bool valid=associated && Display13FBTopology::selected(callbackXE->adlnPlatform,config,callbackXE->adlnHDMIWiring);
+	const bool valid=associated && adlnSelectedPort(callbackXE->adlnPlatform,config,callbackXE->adlnHDMIWiring);
 	auto scaler=valid ? Display13FBMemory::field<OSObject *>(path,0x32C0) : nullptr;
 	if(valid && scaler && scaler->getMetaClass()->getClassSize()>=0x58) {
 		// This CPU method is also called before memory/plane programming. Use
@@ -7403,16 +7438,19 @@ void XE::wrapAlderLakeNPowerInit(void *power,void *controller) {
 				if((trans[pipe]&conf[pipe])&(1U<<31))active|=1U<<pipe;
 			}
 			const auto bootPipe=Display13FBTopology::bootstrapPipe(wells!=UINT32_MAX,powered,active);
-			const auto bootPort=bootPipe<3 ? Display13FBTopology::bootDDI(callbackXE->adlnHDMIWiring,trans[bootPipe]) : UINT32_MAX;
+			const auto bootPort=bootPipe<3 ? (callbackXE->adlnInternalPanel ?
+				Display13FBTopology::panelBootDDI(callbackXE->firmwarePorts.internalPanel().valid,0,true,powered,active,trans[bootPipe]) :
+				Display13FBTopology::bootDDI(callbackXE->adlnHDMIWiring,trans[bootPipe])) : UINT32_MAX;
 			const auto ddi=bootPort<3 ? io.read(0x64000+0x100*bootPort) : UINT32_MAX;
 			// A non-A firmware scanout is admitted only through the explicit strict
 			// 46A6 diagnostic argument. The same measured pipe then owns power,
 			// handoff and IRQ state; never translate it to an A-only lifecycle.
 			const bool alternate=bootPipe && checkKernelArgument("-wex-adlp-any-pipe");
-			bool boot=bootPipe<3 && (bootPipe==0 || alternate) && bootPort<3 && wells!=UINT32_MAX &&
+			bool boot=bootPipe<3 && (callbackXE->adlnInternalPanel ? (bootPipe==0 && bootPort==0) : (bootPipe==0 || alternate)) && bootPort<3 && wells!=UINT32_MAX &&
 				(wells&(1U<<(10+2*bootPipe))) && trans[bootPipe]!=UINT32_MAX && conf[bootPipe]!=UINT32_MAX &&
 				(trans[bootPipe]&(1U<<31)) && (conf[bootPipe]&(1U<<31)) && ddi!=UINT32_MAX && (ddi&(1U<<31));
-			if(boot) {result=c.bridge.begin(io,bootPort,callbackXE->adlnHDMIWiring.hdmi);if(result.status==Display13Power::Status::Complete)c.bootPipe=bootPipe;}
+			if(boot) {result=c.bridge.begin(io,bootPort,callbackXE->adlnInternalPanel ? 1U : callbackXE->adlnHDMIWiring.hdmi,
+				callbackXE->adlnInternalPanel);if(result.status==Display13Power::Status::Complete)c.bootPipe=bootPipe;}
 			else {result.status=Display13Power::Status::InvalidDomains;adlnFault(c.bridge.state.faulted,__LINE__);}
 			if(result.status==Display13Power::Status::Complete && !Display13Power::publishObject(c.bridge,power,0x80,controller,0xC60)) {
 				result.status=Display13Power::Status::NotReady;adlnFault(c.bridge.state.faulted,__LINE__);
@@ -9566,7 +9604,10 @@ bool XE::wrapTGLAcceleratorStart(IOService *that, IOService *provider) {
 	if (!callbackXE->tglAcceleratorReady) return false;
 	if (callbackXE->adlnDetected) {
 		auto pci=OSDynamicCast(IOPCIDevice,provider);
-		if (!callbackXE->adlnNativeReady || !pci || !xelpDisplay13Device(pci)) return false;
+		if (!callbackXE->adlnNativeReady || (callbackXE->adlnInternalPanel && !callbackXE->adlnFramebufferReady) || !pci || !xelpDisplay13Device(pci)) {
+			IORegistryEntry::getRegistryRoot()->setProperty("N97NativeAcceleratorBlockedBeforeFramebuffer",true);
+			return false;
+		}
 		// Standalone startup never calls framebuffer start, which normally
 		// exposes these retained IRQ/submission records. Publish the same
 		// passive serializer here; it makes no driver calls or GPU reads.

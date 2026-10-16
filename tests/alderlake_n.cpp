@@ -277,6 +277,8 @@ int main() {
     assert(panelResult.status==AlderLakeN::LinearStatus::Success && panelResult.writes==result.writes);
     auto wrongPanel=firmware();wrongPanel.regs[0x60400]=0x88030100;
     assert(AlderLakeN::reinitializeInternalPanel(wrongPanel,AlderLakeN::readDisplay(wrongPanel,true),true).status==AlderLakeN::LinearStatus::NotSingleHDMI && wrongPanel.writes.empty());
+    auto panelWrongPipe=firmware();panelWrongPipe.regs.erase(0x60400);panelWrongPipe.regs[0x61400]=0x8A030100;
+    assert(AlderLakeN::internalPanelPlan(AlderLakeN::readDisplay(panelWrongPipe,true),plan)==AlderLakeN::LinearStatus::NotSingleHDMI);
     auto twoHeads=firmware();twoHeads.regs[0x61400]=0x90030100;
     assert(AlderLakeN::reinitializeLinear(twoHeads,AlderLakeN::readDisplay(twoHeads,true),true,0).status==AlderLakeN::LinearStatus::NotSingleHDMI && twoHeads.writes.empty());
     auto changedA=firmware();changedA.regs[0x60400]=0x90030100;

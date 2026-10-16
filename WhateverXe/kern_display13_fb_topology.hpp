@@ -95,6 +95,44 @@ inline bool selected(const void *platform,const void *config,const TGLHDMIWiring
         w.matches(static_cast<const uint32_t *>(config)))return true;
     return false;
 }
+// The exact 46A6 D0 panel policy retains donor DDI-A's panel record and makes
+// every other connector a native dummy. It intentionally accepts neither a
+// Combo record nor a Type-C record as a substitute for the panel.
+inline bool applyInternalPanel(void *destination,uint32_t bytes,const void *source) {
+    if(!destination || !source || destination==source || bytes<Bytes)return false;
+    const auto src=static_cast<const uint8_t *>(source);
+    if(src[0x12]!=Ports)return false;
+    const uint32_t panel[] {0,0,0,0,2,0x18};
+    if(memcmp(src+0x20,panel,sizeof(panel)))return false;
+    for(unsigned d=0;d<Ports;++d) {
+        uint32_t ddi;memcpy(&ddi,src+0x20+24*d,sizeof(ddi));if(ddi!=d)return false;
+    }
+    auto dst=static_cast<uint8_t *>(destination);memcpy(dst,src,Bytes);
+    for(unsigned d=1;d<Ports;++d) {
+        const uint32_t excluded[] {d,0,0,0,1,0};
+        memcpy(dst+0x20+24*d,excluded,sizeof(excluded));
+    }
+    return true;
+}
+inline bool selectedInternalPanel(const void *platform,const void *config) {
+    if(!bound(platform,config,0))return false;
+    const uint32_t panel[] {0,0,0,0,2,0x18};
+    return !memcmp(config,panel,sizeof(panel));
+}
+inline XELP::NativePorts boundInternalPanel(const void *platform) {
+    const auto config=platform ? static_cast<const uint8_t *>(platform)+0x20 : nullptr;
+    return selectedInternalPanel(platform,config) ? XELP::NativePorts {platform,1U} : XELP::NativePorts {};
+}
+inline uint32_t internalExcludedTypeC(const void *platform,uint32_t bytes) {
+    if(!platform || bytes<Bytes || static_cast<const uint8_t *>(platform)[0x12]!=Ports)return 0;
+    const auto p=static_cast<const uint8_t *>(platform);
+    if(!selectedInternalPanel(platform,p+0x20))return 0;
+    for(unsigned d=3;d<Ports;++d) {
+        const uint32_t *config=reinterpret_cast<const uint32_t *>(p+0x20+24*d);
+        if(config[0]!=d || config[4]!=1 || config[5])return 0;
+    }
+    return 0x3F000000;
+}
 // Transport adapter validates records under the native FB mutex. The binding
 // core below consumes only validated port identities, independent of transport.
 inline XELP::NativePorts boundPorts(const void *platform,const TGLHDMIWiring &w) {

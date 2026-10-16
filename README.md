@@ -26,11 +26,11 @@ Dual external 1920×1080 at 60 Hz output, Metal/OpenGL, hardware HEVC and displa
 sleep/wake have been tested on Tiger Lake and Alder Lake-N. Hardware H.264
 encode/decode has also been tested on Tiger Lake. The Alder Lake-P entry is a
 strict 46A6 D0 Display-13 bring-up profile; it requires live hardware validation
-and is not a compatibility claim for other Alder Lake-P systems. A guarded
-internal-eDP handoff validation path exists only for its exact firmware panel
-topology; it does not establish accelerator, sleep/wake, or general internal-display
-support. Three simultaneous displays, higher resolutions, USB-C, and other connector
-layouts require further validation.
+and is not a compatibility claim for other Alder Lake-P systems. A guarded internal-
+eDP lifecycle candidate exists only for the exact firmware panel route (DDI A,
+pipe A, AUX `0x40`, native DP mode). It is opt-in experimental support, not a
+compatibility claim for other internal displays, sleep/wake, USB-C, or connector
+layouts. Three simultaneous displays and higher resolutions require further validation.
 
 Download the **RELEASE** ZIP from [Releases](https://github.com/b00t0x/WhateverXe/releases). The DEBUG ZIP is for troubleshooting.
 
@@ -93,7 +93,8 @@ Add the following to OpenCore's `boot-args`:
 | `-wex-nopanel` | Additionally required on Tiger Lake systems without an internal display. Alder Lake-N / Twin Lake currently builds an external-display topology automatically and does not use this flag. |
 
 No family-selection or per-feature enable arguments are required for Alder Lake-N /
-Twin Lake or the strict Alder Lake-P `46A6` D0 profile.
+Twin Lake. The strict Alder Lake-P `46A6` D0 eDP candidate additionally requires
+its explicit optional argument below.
 
 ### Optional boot arguments
 
@@ -105,6 +106,7 @@ Twin Lake or the strict Alder Lake-P `46A6` D0 profile.
 | `-wexbeta` | Bypass the plugin's OS-version check. Exact kernel/driver checks still apply. |
 | `-wex-tgl-off` | Disable the Tiger Lake path. |
 | `-wex-adlp-any-pipe` | Experimental `46A6` D0-only admission: allow one validated firmware scanout on Display-13 pipe B or C and retain that measured pipe through boot handoff, power, and IRQ validation. Keep `-allow3d` and `-disablegfxfirmware`; use only for a single external-display experiment and remove it after collecting the preflight result. |
+| `-wex-adlp-edp` | Experimental exact-`46A6` D0 internal-panel lifecycle candidate. Requires the firmware VBT panel route DDI A / pipe A / AUX `0x40` / native DP mode and the required arguments above. It never enables HDMI, Type-C, or an alternate pipe; remove it to return to the framebuffer-only fallback. |
 
 ## Roadmap
 

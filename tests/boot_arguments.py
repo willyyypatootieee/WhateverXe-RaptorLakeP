@@ -31,6 +31,7 @@ removed = [name for aliases in names.values() for name in aliases]
 assert not set(removed) & used
 assert not {"-wex-display13", "-wex-adln-native", "-wex-adln-rcs-profile"} & used
 assert "const bool linearTest = display13FramebufferRequested;" in xe
+assert "(callbackXE->adlnInternalPanel && !callbackXE->adlnFramebufferReady)" in xe
 init = xe[xe.index('void XE::init() {'):xe.index('void XE::deinit()')]
 assert 'BaseDeviceInfo' not in init and 'CPU_MODEL' not in init
 entry = re.search(r'extern "C" kern_return_t tglStart\(.*?\n\}', provider, re.S).group()
@@ -51,7 +52,7 @@ static int kextIntelTGLFb, kextAppleIntelTGLCompat, kextIntelTGL;
 static struct { void onKextLoadForce(int *) {} } lilu;
 struct XE {
  XELP::Profile xeProfile;
- bool adlnRequested=false, adlnDetected=false, adlnKernelReady=false, adlnNativeRequested=false, adlnPanelObservation=false;
+ bool adlnRequested=false, adlnDetected=false, adlnKernelReady=false, adlnNativeRequested=false, adlnPanelObservation=false, adlnInternalPanel=false, adlnInternalPanelRequested=false, adlnFramebufferReady=false;
  bool display13FramebufferRequested=false, display13TraceEnabled=false;
  bool tglRequested=false, tglAcceleratorRequested=false, tglNoPanel=false;
  bool tglInactivePorts=false, tglPG1Poll=false, tglClockOrderRequested=false;
@@ -101,6 +102,8 @@ int main() {
   xe=boot({},0x46A68086);assert(!xe.tglRequested && !xe.adlnRequested);
   xe=boot({},0x46A68086,0x46A68086,0x0c);
   assert(xe.adlnRequested && xe.adlnNativeRequested && xe.display13FramebufferRequested && xe.tglRequested);
+  xe=boot({"-wex-adlp-edp"},0x46A68086,0x46A68086,0x0c);
+  assert(xe.adlnInternalPanelRequested && xe.adlnNativeRequested);
   xe=boot({},0x46A68086,0,0x0d);assert(!xe.adlnRequested && !xe.adlnNativeRequested);
  for(uint32_t pci:{0x46A68086U,0x46808086U,0xA7A08086U}) {
   xe=boot({},pci);assert(!xe.adlnNativeRequested && !xe.display13FramebufferRequested && !adlnNativeRCSProfileRequested);

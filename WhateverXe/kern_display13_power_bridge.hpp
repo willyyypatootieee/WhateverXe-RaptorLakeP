@@ -40,7 +40,7 @@ struct NativeBridge {
     uint32_t selectedPorts {2};
     unsigned bootPort {1}; // Physical DDI selected by the measured boot pipe.
     bool begun {};
-    bool bootPGProtected {}, bootDDIProtected {};
+    bool bootPGProtected {}, bootDDIProtected {}, bootAUXProtected {};
     uintptr_t bootPath {};
     bool bootAdopted {}; // Handoff history survives removal of the boot path identity.
 
@@ -60,7 +60,7 @@ struct NativeBridge {
     uint32_t nativeDDIBRefs() const { return nativeDDIRefs(1); }
     uint32_t nativeAUXBRefs() const { return nativeAUXRefs(1); }
 
-    template<class IO> Result begin(IO &io, unsigned port=1, uint32_t ports=2) {
+    template<class IO> Result begin(IO &io, unsigned port=1, uint32_t ports=2,bool retainBootAUX=false) {
         Result r;
         if (begun || state.ready) return r;
         const auto allowed = nativeDomains(ports);
@@ -76,7 +76,15 @@ struct NativeBridge {
         r = acquire(io,state,ddiLease[port],ddiDomain(port));
         r.writes += pgWrites;
         if (r.status != Status::Complete) return r; // Retain the A lease on failure.
-        ddiRefs[port] = 1; bootDDIProtected = true; begun = true;
+        ddiRefs[port] = 1; bootDDIProtected = true;
+        if(retainBootAUX) {
+            const auto ddiWrites=r.writes;
+            r=acquire(io,state,auxLease[port],auxDomain(port));
+            r.writes+=ddiWrites;
+            if(r.status!=Status::Complete)return r; // Retain boot DDI on failure.
+            auxRefs[port]=1;bootAUXProtected=true;
+        }
+        begun = true;
         return r;
     }
     template<class IO> Result getPG(IO &io, unsigned pg) {
@@ -158,6 +166,7 @@ struct NativeBridge {
         if (!begun || state.faulted || state.suspended) return r;
         if (!acceptsPort(port)) { r.status = Status::InvalidDomains; return r; }
         if (!auxRefs[port]) { r.status = Status::Unbalanced; return r; }
+        if(port==bootPort && auxRefs[port]==1 && bootAUXProtected) {r.status=Status::Unbalanced;return r;}
         if (auxRefs[port] == 1) {
             r = release(io,state,auxLease[port]);
             if (r.status != Status::Complete) return r;
@@ -174,10 +183,11 @@ struct NativeBridge {
         Result r;
         if (!begun || state.faulted) return r;
         if (!path || pipe >= 3 || port != bootPort || !acceptsPort(port)) { r.status = Status::InvalidDomains; return r; }
-        if (bootAdopted || bootPath || !bootPGProtected || !bootDDIProtected || !pgRefs[0] || !ddiRefs[port]) {
+        if (bootAdopted || bootPath || !bootPGProtected || !bootDDIProtected ||
+            (bootAUXProtected && !auxRefs[port]) || !pgRefs[0] || !ddiRefs[port]) {
             r.status = Status::Unbalanced; return r;
         }
-        bootPath = path; bootAdopted = true; bootPGProtected = bootDDIProtected = false;
+        bootPath = path; bootAdopted = true; bootPGProtected = bootDDIProtected = bootAUXProtected = false;
         r.status = Status::Complete;
         return r;
     }

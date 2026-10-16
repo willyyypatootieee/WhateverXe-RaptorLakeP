@@ -41,10 +41,10 @@ int main() {
  assert(!strcmp(model(p),"Intel Iris Xe Graphics")); // Name is physical, backend is overridden.
  auto q=p;q.effectiveIdentity=0x46D18086;assert(!same(p,q));
  ProbeConfig c;c.profile=p;c.combo=c.comboBackend=3;assert(c.valid());
-  c.abi=2;assert(!c.valid());c.abi=3;c.profile.gt=GT::TGLGT2;assert(!c.valid());
+  c.abi=2;assert(!c.valid());c.abi=4;c.profile.gt=GT::TGLGT2;assert(!c.valid());
   auto adlp=identify(0x46A68086,0x0c);
   assert(adlp.admitted() && adlp.family==Family::AlderLakeP && adlp.gt==GT::ADLPGT2);
   assert(!identify(0x46A68086,0).admitted() && !identify(0x46A68086,0x0d).admitted());
   auto adlpOverride=identify(0x12348086,0x0c,0x46A68086);assert(!adlpOverride.admitted());
- puts("PASS device table, physical/effective identity, strict override bytes/vendor/revision, model choice and ABI3");
+  puts("PASS device table, physical/effective identity, strict override bytes/vendor/revision, model choice and ABI4");
 }
