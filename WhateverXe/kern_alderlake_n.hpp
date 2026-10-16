@@ -51,13 +51,14 @@ inline bool resources(uint32_t slice, uint32_t dss, uint32_t euDisable,
 }
 
 // The Display-13 adapter also services the separately guarded ADL-P GT2
-// profile. It has the same Gen12 fuse encoding, but never shares the small-GT
-// capacity rule above. Keep this exact full-GT predicate here so readGT can
-// validate the hardware before any donor topology patch is installed.
+// profile. Its physical 46A6 D0 fuse word reports all six DSS, no disabled EU
+// pairs, and an enabled L3 bank mask. It never shares the small-GT capacity
+// rule above. Keep this exact predicate here so readGT validates hardware
+// before any donor topology patch is installed.
 inline bool resourcesFullGT2(uint32_t slice,uint32_t dss,uint32_t euDisable,
                              uint32_t l3Disable,Resources &out) {
     out={};
-    if(slice!=1 || dss!=0x3f || euDisable || l3Disable!=0xf0)return false;
+    if(slice!=1 || dss!=0x3f || euDisable || l3Disable)return false;
     out={1,6,12,96,8,512};
     return true;
 }
@@ -119,10 +120,10 @@ template<class IO> GTReadout readGT(IO &io,bool admitted,uint32_t *edram=nullptr
             out.fuses[i]=io.read(fuse[i]);
             if(out.fuses[i]==UINT32_MAX)out.status=GTStatus::Unavailable;
         }
-        if(out.status==GTStatus::Complete &&
-            (!(fullGT2 ? resourcesFullGT2(out.fuses[0],out.fuses[1],out.fuses[2],out.fuses[3],out.resources) :
-                         resources(out.fuses[0],out.fuses[1],out.fuses[2],out.fuses[3],out.resources)) ||
-            out.fuses[4]!=0x000E00FE))out.status=GTStatus::ProfileMismatch;
+        const auto resourceMatch=fullGT2 ? resourcesFullGT2(out.fuses[0],out.fuses[1],out.fuses[2],out.fuses[3],out.resources) :
+            resources(out.fuses[0],out.fuses[1],out.fuses[2],out.fuses[3],out.resources);
+        const auto identityMatch=out.fuses[4]==(fullGT2 ? 0x000E00FA : 0x000E00FE);
+        if(out.status==GTStatus::Complete && (!resourceMatch || !identityMatch))out.status=GTStatus::ProfileMismatch;
         if(edram) {
             *edram=io.readable(0x120010) ? io.read(0x120010) : UINT32_MAX;
             if(*edram==UINT32_MAX)out.status=GTStatus::Unavailable;
@@ -225,14 +226,14 @@ struct LinearResult {
 // plane on the explicitly selected Combo A/B/C. The default remains B for
 // the original standalone diagnostics. No new PLL/PHY/power-well cold
 // initialization, a new GGTT mapping, full modeset or accelerated scanout.
-inline LinearStatus linearPlan(const DisplayReadout &r, LinearPlan &p,unsigned ddi=1) {
+inline LinearStatus linearPlan(const DisplayReadout &r, LinearPlan &p,unsigned ddi=1,bool internalPanel=false) {
     p={};
     if (ddi>=3 || r.status!=ReadoutStatus::Complete || !r.activePipes || (r.activePipes&~7U) ||
         (r.activePipes & (r.activePipes-1)) || (r.activePipes&~r.poweredPipes) ||
         (ddi==1 && r.activePipes!=r.hdmiBPipes))
         return LinearStatus::NotSingleHDMI;
     while (!(r.activePipes & (1U<<p.pipe))) ++p.pipe;
-    if (p.pipe>=3) return LinearStatus::NotSingleHDMI;
+    if (p.pipe>=3 || (internalPanel && (ddi!=0 || p.pipe!=0))) return LinearStatus::NotSingleHDMI;
     const uint32_t delta=0x1000*p.pipe;
     uint32_t trans {}, cursor {}, surfLive {}, plane {}, pipeConf {}, htotal {}, vtotal {};
     if (!value(r,0x42084,p.chicken) || !value(r,0x70028+delta,p.arb) ||
@@ -242,7 +243,8 @@ inline LinearStatus linearPlan(const DisplayReadout &r, LinearPlan &p,unsigned d
         !value(r,0x701AC+delta,surfLive) || !value(r,0x60400+delta,trans) ||
         !value(r,0x70008+delta,pipeConf) || !value(r,0x60000+delta,htotal) || !value(r,0x6000C+delta,vtotal))
         return LinearStatus::NotLinearFHD;
-    if(!(trans&(1U<<31)) || ((trans>>27)&15)!=ddi+1 || ((trans>>24)&7)>1)
+    const auto mode=(trans>>24)&7;
+    if(!(trans&(1U<<31)) || ((trans>>27)&15)!=ddi+1 || (internalPanel ? mode!=2 : mode>1))
         return LinearStatus::NotSingleHDMI;
     p.geometry=XELPGeometry::linear(p.control,p.stride,p.size,p.position,p.offset);
     if(!p.geometry.valid || (p.surface&4095) || p.surface!=surfLive ||
@@ -264,11 +266,18 @@ inline LinearStatus linearPlan(const DisplayReadout &r, LinearPlan &p,unsigned d
     return LinearStatus::Ready;
 }
 
-template<class IO> LinearResult reinitializeLinear(IO &io, const DisplayReadout &r, bool admitted,unsigned ddi=1) {
+// eDP handoff is deliberately distinct from the Combo HDMI path. It accepts
+// only the measured pipe-A/DDI-A native DP mode and retains all plane, timing,
+// cursor and state-change checks from the generic read-only plan.
+inline LinearStatus internalPanelPlan(const DisplayReadout &r,LinearPlan &p) {
+    return linearPlan(r,p,0,true);
+}
+
+template<class IO> LinearResult reinitializeLinear(IO &io, const DisplayReadout &r, bool admitted,unsigned ddi=1,bool internalPanel=false) {
     LinearResult out;
     if (!admitted) return out;
     LinearPlan p;
-    out.status=linearPlan(r,p,ddi);
+    out.status=linearPlan(r,p,ddi,internalPanel);
     if(out.status!=LinearStatus::Ready)return out;
     out.pipe=p.pipe;
     const auto d=0x1000*p.pipe;
@@ -320,6 +329,12 @@ template<class IO> LinearResult reinitializeLinear(IO &io, const DisplayReadout 
     }
     out.framesAfter=io.read(frame);out.status=LinearStatus::Success;
     return out;
+}
+
+template<class IO> LinearResult reinitializeInternalPanel(IO &io,const DisplayReadout &r,bool admitted) {
+    // The transaction below is intentionally shared: it preserves the live
+    // panel mode and merely disables/restores its existing primary plane.
+    return reinitializeLinear(io,r,admitted,0,true);
 }
 
 struct GGTTBlock {

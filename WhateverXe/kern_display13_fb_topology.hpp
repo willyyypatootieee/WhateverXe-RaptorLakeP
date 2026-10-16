@@ -61,7 +61,7 @@ inline uint32_t bootstrapDDI(const TGLHDMIWiring &w,bool complete,uint32_t power
 inline uint32_t panelBootDDI(bool panelValid,uint32_t panelDDI,bool complete,uint32_t powered,
                              uint32_t active,uint32_t trans) {
     if(!panelValid || panelDDI>=3 || bootstrapPipe(complete,powered,active)>=3 || trans==UINT32_MAX ||
-       !(trans&(1U<<31)) || ((trans>>27)&15)!=panelDDI+1 || ((trans>>24)&7)>1)return UINT32_MAX;
+       !(trans&(1U<<31)) || ((trans>>27)&15)!=panelDDI+1 || ((trans>>24)&7)!=2)return UINT32_MAX;
     return panelDDI;
 }
 // Preserve donor record count, DDI identities, memory sizing and unrelated

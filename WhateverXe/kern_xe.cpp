@@ -2732,7 +2732,9 @@ void XE::adlnBootstrap(IOPCIDevice *pci) {
 	SYSLOG("igfx", "AlderLakeN Display13 readout status=%u powered=%x active=%x hdmiB=%x; donor blocked",
 		static_cast<uint32_t>(result.status), result.poweredPipes, result.activePipes, result.hdmiBPipes);
 	if (linearTest) {
-		auto linear=AlderLakeN::reinitializeLinear(io,result,barReady && xelpMemoryMatches(pci),bootDDI);
+		auto linear=adlnPanelObservation ? AlderLakeN::reinitializeInternalPanel(io,result,
+			barReady && xelpMemoryMatches(pci) && bootDDI==0) :
+			AlderLakeN::reinitializeLinear(io,result,barReady && xelpMemoryMatches(pci),bootDDI);
 		pci->setProperty("N97Display13Linear",&linear,sizeof(linear));
 		auto after=AlderLakeN::readDisplay(io,barReady);
 		pci->setProperty("N97Display13After",&after,sizeof(after));

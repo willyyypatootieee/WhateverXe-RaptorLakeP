@@ -26,9 +26,11 @@ Dual external 1920×1080 at 60 Hz output, Metal/OpenGL, hardware HEVC and displa
 sleep/wake have been tested on Tiger Lake and Alder Lake-N. Hardware H.264
 encode/decode has also been tested on Tiger Lake. The Alder Lake-P entry is a
 strict 46A6 D0 Display-13 bring-up profile; it requires live hardware validation
-and is not a compatibility claim for other Alder Lake-P systems. Three simultaneous
-displays, system sleep, higher resolutions and other connector layouts require
-further validation. USB-C and internal display support are planned below.
+and is not a compatibility claim for other Alder Lake-P systems. A guarded
+internal-eDP handoff validation path exists only for its exact firmware panel
+topology; it does not establish accelerator, sleep/wake, or general internal-display
+support. Three simultaneous displays, higher resolutions, USB-C, and other connector
+layouts require further validation.
 
 Download the **RELEASE** ZIP from [Releases](https://github.com/b00t0x/WhateverXe/releases). The DEBUG ZIP is for troubleshooting.
 
@@ -111,7 +113,7 @@ Twin Lake or the strict Alder Lake-P `46A6` D0 profile.
 - macOS Monterey through Tahoe support using OCLP's capabilities
 - Alder Lake and Raptor Lake S/H/P/U support
 - USB-C display output
-- Internal displays
+- General internal-display support
 
 ### Not Planned
 

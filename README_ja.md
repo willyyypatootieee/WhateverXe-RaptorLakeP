@@ -18,7 +18,7 @@ WhateverXeは、一部のIntel Xe-LP内蔵GPU向けにAppleのグラフィック
 
 対応状況は機種やコネクタ構成によって異なります。この表はバックエンドの実装範囲を示すもので、すべての機種での動作を保証するものではありません。詳細な選択条件と上書き設定は[デバイス選択](docs/device-selection.md)を参照してください。
 
-Tiger LakeとAlder Lake-Nで、外部2画面の1920×1080・60Hz出力、Metal/OpenGL、ハードウェアHEVC、画面の消灯／復帰を確認しています。Tiger LakeではハードウェアH.264のエンコード／デコードも確認しています。Alder Lake-Pの項目は、厳密に`46A6` D0／Display-13に限定したbring-up profileであり、実機での追加検証が必要です。他のAlder Lake-Pシステムへの互換性を示すものではありません。3画面同時出力、システムスリープ、より高い解像度や他のコネクタ構成は追加検証が必要です。USB-Cと内蔵ディスプレイへの対応は下記ロードマップに含まれます。
+Tiger LakeとAlder Lake-Nで、外部2画面の1920×1080・60Hz出力、Metal/OpenGL、ハードウェアHEVC、画面の消灯／復帰を確認しています。Tiger LakeではハードウェアH.264のエンコード／デコードも確認しています。Alder Lake-Pの項目は、厳密に`46A6` D0／Display-13に限定したbring-up profileであり、実機での追加検証が必要です。他のAlder Lake-Pシステムへの互換性を示すものではありません。厳密に一致するfirmware panel topologyに限り、保護された内蔵eDP handoff validation pathがありますが、accelerator、スリープ／復帰、一般的な内蔵ディスプレイ対応を示すものではありません。3画面同時出力、より高い解像度、USB-C、その他のコネクタ構成は追加検証が必要です。
 
 [Releases](https://github.com/b00t0x/WhateverXe/releases)から **RELEASE** ZIPをダウンロードしてください。DEBUG ZIPは問題調査用です。
 
@@ -88,7 +88,7 @@ Alder Lake-N / Twin Lakeおよび厳密なAlder Lake-P `46A6` D0 profileでは�
 - OCLPの機能を利用したmacOS Monterey〜Tahoe対応
 - Alder Lake／Raptor LakeのS/H/P/U対応
 - USB-C画面出力対応
-- 内蔵ディスプレイ対応
+- 一般的な内蔵ディスプレイ対応
 
 ### Not Planned
 

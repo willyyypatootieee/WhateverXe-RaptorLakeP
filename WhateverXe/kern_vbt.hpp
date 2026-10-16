@@ -69,6 +69,12 @@ struct Ports {
         // DVO 10, DDC 3, AUX 0x40 and the firmware's fixed panel flags.
         if(!p.internal() || !p.dp() || p.type!=0x1806 || p.dvo!=10 ||
            p.ddc!=3 || p.aux!=0x40 || p.flags!=0xC0)return r;
+        // The fixed panel owns its AUX channel. A second internal record or
+        // another DP record sharing AUX is a board topology we do not model.
+        for(unsigned d=1;d<PortCount;++d)if(present&(1U<<d)) {
+            const auto &other=port[d];
+            if(other.internal() || (other.dp() && other.aux==p.aux))return r;
+        }
         r={0,p.ddc,p.aux,p.type,p.flags,true};return r;
     }
 };

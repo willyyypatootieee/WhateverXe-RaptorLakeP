@@ -59,9 +59,13 @@ int main(int argc,char **argv){
   assert(ddi(Family::TigerLake,9)==3&&ddi(Family::AlderLakeN,13)==3&&ddi(Family::AlderLakeP,13)==3&&ddi(Family::AlderLakeN,19)==6);
   assert(ddi(Family::AlderLakeN,9)==PortCount&&ddi(Family::TigerLake,8)==PortCount);
   auto panel=table({{0x1806,10,3,0x40,0xc0,0},{0x68c6,13,3,0x60,0xc0,3}});
-  auto panelPorts=parse(panel.data(),panel.size(),Family::AlderLakeP);auto route=panelPorts.internalPanel();
-  assert(route.valid&&route.ddi==0&&route.ddc==3&&route.aux==0x40);
-  panelPorts.port[0].aux=0x41;assert(!panelPorts.internalPanel().valid);
+   auto panelPorts=parse(panel.data(),panel.size(),Family::AlderLakeP);auto route=panelPorts.internalPanel();
+   assert(route.valid&&route.ddi==0&&route.ddc==3&&route.aux==0x40);
+   panelPorts.port[0].aux=0x41;assert(!panelPorts.internalPanel().valid);
+   panelPorts=parse(panel.data(),panel.size(),Family::AlderLakeP);panelPorts.present|=2;
+   panelPorts.port[1]={0x1806,7,3,0x50,0xc0,0};assert(!panelPorts.internalPanel().valid);
+   panelPorts=parse(panel.data(),panel.size(),Family::AlderLakeP);panelPorts.present|=2;
+   panelPorts.port[1]={0x68c6,7,3,0x40,0xc0,0};assert(!panelPorts.internalPanel().valid);
  for(auto p:{Port{0x60d6,1,2},Port{0x78c6,10,1},Port{0x60d2,1,2,0,4},Port{0x60d2,1,2,0,2},Port{0x60d2,1,2,0,0,1}}){
   auto b=table({p});auto q=parse(b.data(),b.size(),Family::TigerLake);assert(q.valid()&&!q.hdmi(3).hdmi);
  }

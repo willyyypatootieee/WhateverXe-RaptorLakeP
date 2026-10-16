@@ -189,6 +189,11 @@ int main() {
     auto stuckGT=firmwareGT();stuckGT.failReleaseGT=true;
     auto stuck=AlderLakeN::readGT(stuckGT,true);
     assert(stuck.status==AlderLakeN::GTStatus::ReleaseFailed && stuck.releaseFailedMask==1 && stuck.releasedMask==2);
+    auto adlp=firmwareGT();adlp.regs[0x913c]=0x3f;adlp.regs[0x9134]=0;adlp.regs[0x9118]=0;adlp.regs[0x9140]=0xe00fa;
+    auto adlpReady=AlderLakeN::readGT(adlp,true,nullptr,true);
+    assert(adlpReady.status==AlderLakeN::GTStatus::Complete && adlpReady.resources.eus==96 && adlpReady.resources.l3Banks==8);
+    adlp=firmwareGT();adlp.regs[0x913c]=0x3f;adlp.regs[0x9134]=0;adlp.regs[0x9118]=0;adlp.regs[0x9140]=0xe00fe;
+    assert(AlderLakeN::readGT(adlp,true,nullptr,true).status==AlderLakeN::GTStatus::ProfileMismatch);
     std::puts("AlderLakeN GT forcewake ownership, ACK failure, fuse profile and release fixtures passed");
     assert(AlderLakeN::matches(0x46d18086,0));
     for(unsigned id=0x46d0;id<=0x46d4;++id) {assert(AlderLakeN::matches((id<<16)|0x8086,0));assert(!AlderLakeN::matches((id<<16)|0x8086,1));}
@@ -212,9 +217,9 @@ int main() {
     }
     assert(profiles>0);
     assert(!AlderLakeN::resources(1,0x40,0,0xf0,res) && !AlderLakeN::resources(1,3,0x100,0xf0,res));
-    assert(AlderLakeN::resourcesFullGT2(1,0x3f,0,0xf0,res));
+    assert(AlderLakeN::resourcesFullGT2(1,0x3f,0,0,res));
     assert(res.dss==6 && res.nativeSubslices==12 && res.eus==96 && res.l3Banks==8 && res.urbKiB==512);
-    assert(!AlderLakeN::resourcesFullGT2(1,0x1f,0,0xf0,res));
+    assert(!AlderLakeN::resourcesFullGT2(1,0x1f,0,0,res));
     IO absent;assert(AlderLakeN::readDisplay(absent,false).status==AlderLakeN::ReadoutStatus::NotAdmitted);
     assert(absent.reads.empty());
     // Firmware may drive port B through pipe A; port != pipe is intentional.
@@ -267,6 +272,11 @@ int main() {
         assert(AlderLakeN::reinitializeLinear(wrongPort,bState,true,ddi).status==AlderLakeN::LinearStatus::NotSingleHDMI && wrongPort.writes.empty());
     auto aDP=firmware();aDP.regs[0x60400]=0x8A030100;
     assert(AlderLakeN::reinitializeLinear(aDP,AlderLakeN::readDisplay(aDP,true),true,0).status==AlderLakeN::LinearStatus::NotSingleHDMI && aDP.writes.empty());
+    assert(AlderLakeN::internalPanelPlan(AlderLakeN::readDisplay(aDP,true),plan)==AlderLakeN::LinearStatus::Ready && plan.pipe==0);
+    auto panelResult=AlderLakeN::reinitializeInternalPanel(aDP,AlderLakeN::readDisplay(aDP,true),true);
+    assert(panelResult.status==AlderLakeN::LinearStatus::Success && panelResult.writes==result.writes);
+    auto wrongPanel=firmware();wrongPanel.regs[0x60400]=0x88030100;
+    assert(AlderLakeN::reinitializeInternalPanel(wrongPanel,AlderLakeN::readDisplay(wrongPanel,true),true).status==AlderLakeN::LinearStatus::NotSingleHDMI && wrongPanel.writes.empty());
     auto twoHeads=firmware();twoHeads.regs[0x61400]=0x90030100;
     assert(AlderLakeN::reinitializeLinear(twoHeads,AlderLakeN::readDisplay(twoHeads,true),true,0).status==AlderLakeN::LinearStatus::NotSingleHDMI && twoHeads.writes.empty());
     auto changedA=firmware();changedA.regs[0x60400]=0x90030100;
