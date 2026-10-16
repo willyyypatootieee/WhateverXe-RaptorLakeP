@@ -75,6 +75,8 @@ int main() {
         assert(bootstrapPipe(true,3,1)==0 && bootstrapPipe(true,3,2)==1);
         assert(bootstrapDDI(w,true,3,1,0x89030100)==((mask&1)?0U:UINT32_MAX));
         assert(bootstrapDDI(w,true,3,2,0x91030100)==((mask&2)?1U:UINT32_MAX));
+        assert(panelBootDDI(true,0,true,3,1,0x89030100)==0);
+        assert(panelBootDDI(true,0,true,3,2,0x89030100)==0);
         assert(bootstrapDDI(w,true,3,3,0x89030100)==UINT32_MAX); // No silent second-GOP takeover.
         assert(bootstrapDDI(w,true,2,1,0x89030100)==UINT32_MAX);
         assert(bootstrapDDI(w,false,3,1,0x89030100)==UINT32_MAX);

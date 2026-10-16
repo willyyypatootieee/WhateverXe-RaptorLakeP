@@ -55,6 +55,15 @@ inline uint32_t bootstrapPipe(bool complete,uint32_t powered,uint32_t active) {
 inline uint32_t bootstrapDDI(const TGLHDMIWiring &w,bool complete,uint32_t powered,uint32_t active,uint32_t trans) {
     return bootstrapPipe(complete,powered,active)<3 ? bootDDI(w,trans) : UINT32_MAX;
 }
+// Observation-only eDP qualification. It validates the exact firmware panel
+// record and the single measured firmware scanout, but never treats eDP as
+// HDMI or authorizes the HDMI backend to mutate the panel connector.
+inline uint32_t panelBootDDI(bool panelValid,uint32_t panelDDI,bool complete,uint32_t powered,
+                             uint32_t active,uint32_t trans) {
+    if(!panelValid || panelDDI>=3 || bootstrapPipe(complete,powered,active)>=3 || trans==UINT32_MAX ||
+       !(trans&(1U<<31)) || ((trans>>27)&15)!=panelDDI+1 || ((trans>>24)&7)>1)return UINT32_MAX;
+    return panelDDI;
+}
 // Preserve donor record count, DDI identities, memory sizing and unrelated
 // settings. Native objects retain pointers to this stable copy. Preflight
 // every identity and the existing HDMI-B record before any write.

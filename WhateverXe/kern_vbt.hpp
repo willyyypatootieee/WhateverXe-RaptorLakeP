@@ -22,6 +22,12 @@ struct Port {
     bool fixedTMDS() const {return (type&0x12)==0x12 && !(type&(4|0x1000|0x400|0x20|1)) &&
         !(flags&0x17) && !(capabilities&3);}
 };
+// A strictly observed ADL-P internal panel route. This describes only the
+// firmware's fixed eDP panel; Type-C/USB-C records remain outside this path.
+struct InternalPanel {
+    uint32_t ddi {PortCount},ddc {},aux {},type {},flags {};
+    bool valid {};
+};
 struct Ports {
     Status status {Status::Missing};
     uint32_t version {},bytes {},present {},unmapped {},ambiguous {};
@@ -54,6 +60,16 @@ struct Ports {
             used|=1U<<pin;w.hdmi|=1U<<d;w.ddc[d]=pin;
         }
         return w;
+    }
+    InternalPanel internalPanel() const {
+        InternalPanel r;
+        if(!valid() || !(present&1U))return r;
+        const auto &p=port[0];
+        // Exact record observed on the guarded 46A6 D0 target: DDI A/eDP,
+        // DVO 10, DDC 3, AUX 0x40 and the firmware's fixed panel flags.
+        if(!p.internal() || !p.dp() || p.type!=0x1806 || p.dvo!=10 ||
+           p.ddc!=3 || p.aux!=0x40 || p.flags!=0xC0)return r;
+        r={0,p.ddc,p.aux,p.type,p.flags,true};return r;
     }
 };
 // Return the donor's physical-DDI slot, never an FB index. Display13 VBT

@@ -2598,6 +2598,7 @@ void XE::init() {
 void XE::selectProfile(const XELP::Profile &profile) {
     xeProfile=profile;
     adlnNativeRCSProfileRequested=false;
+    adlnPanelObservation=false;
     adlnRequested=profile.admitted() && profile.display==XELP::Display::XeLPD &&
         ((profile.family==XELP::Family::AlderLakeN && profile.gt==XELP::GT::ADLNSmall) ||
          (profile.family==XELP::Family::AlderLakeP && profile.gt==XELP::GT::ADLPGT2));
@@ -2651,9 +2652,15 @@ void XE::adlnBootstrap(IOPCIDevice *pci) {
     auto wiring=OSDynamicCast(OSData,property);
     const auto board=XELP::VBT::selectHDMI(property!=nullptr,wiring?wiring->getBytesNoCopy():nullptr,
         wiring?wiring->getLength():0,firmwarePorts,3);
-    if(adlnNativeRequested && !Display13FBTopology::supportedWiring(board)) {
-        pci->setProperty("N97NativeRoutingUnavailable",true);return;
-    }
+	const auto panel=firmwarePorts.internalPanel();
+	uint64_t panelRoute[] {1,panel.valid,panel.ddi,panel.ddc,panel.aux,panel.type,panel.flags};
+	pci->setProperty("N97NativePanelRouting",panelRoute,sizeof(panelRoute));
+	const bool hdmiRoute=Display13FBTopology::supportedWiring(board);
+	adlnPanelObservation=adlnNativeRequested && !hdmiRoute && panel.valid;
+	if(adlnNativeRequested && !hdmiRoute && !adlnPanelObservation) {
+		pci->setProperty("N97NativeRoutingUnavailable",true);return;
+	}
+	if(adlnPanelObservation)pci->setProperty("N97NativePanelObservation",true);
 	auto bootDDI=adlnNativeRequested ? UINT32_MAX : 1U;
 	uint64_t connector[] {1,adlnNativeRequested,wiring!=nullptr,board.valid,board.hdmi,bootDDI};
 	pci->setProperty("N97NativeBootConnector",connector,sizeof(connector));
@@ -2706,9 +2713,20 @@ void XE::adlnBootstrap(IOPCIDevice *pci) {
 	}
 	if(adlnNativeRequested && bootstrapReady) {
 		uint32_t trans=UINT32_MAX;
-		if(AlderLakeN::value(result,0x60400,trans))bootDDI=Display13FBTopology::bootstrapDDI(board,
-			result.status==AlderLakeN::ReadoutStatus::Complete,result.poweredPipes,result.activePipes,trans);
+		const auto measuredPipe=Display13FBTopology::bootstrapPipe(
+			result.status==AlderLakeN::ReadoutStatus::Complete,result.poweredPipes,result.activePipes);
+		if(measuredPipe<3 && AlderLakeN::value(result,0x60400+0x1000*measuredPipe,trans)) {
+			if(adlnPanelObservation)bootDDI=Display13FBTopology::panelBootDDI(panel.valid,panel.ddi,
+				result.status==AlderLakeN::ReadoutStatus::Complete,result.poweredPipes,result.activePipes,trans);
+			else bootDDI=Display13FBTopology::bootstrapDDI(board,
+				result.status==AlderLakeN::ReadoutStatus::Complete,result.poweredPipes,result.activePipes,trans);
+		}
 		connector[5]=bootDDI;pci->setProperty("N97NativeBootConnector",connector,sizeof(connector));
+		if(adlnPanelObservation) {
+			uint64_t panelBoot[] {1,bootDDI<3,measuredPipe,bootDDI,
+				result.poweredPipes,result.activePipes,trans};
+			pci->setProperty("N97NativePanelBoot",panelBoot,sizeof(panelBoot));
+		}
 	}
 	pci->setProperty("N97DisplayReadoutStatus", static_cast<uint32_t>(result.status), 32);
 	SYSLOG("igfx", "AlderLakeN Display13 readout status=%u powered=%x active=%x hdmiB=%x; donor blocked",
@@ -2851,11 +2869,11 @@ void XE::adlnBootstrap(IOPCIDevice *pci) {
 			const bool pciReady=(pci->configRead16(4)&6)==6;
 			const bool argumentsReady=checkKernelArgument("-allow3d") && checkKernelArgument("-disablegfxfirmware");
 			const bool diagnosticsIdle=!checkKernelArgument("-wex-adln-scanout") && !checkKernelArgument("-wex-adln-gpu");
-			adlnNativeReady=topologyReady && edramReady && prefix && apertureReady && pageReady &&
+			adlnNativeReady=!adlnPanelObservation && topologyReady && edramReady && prefix && apertureReady && pageReady &&
 				physicalOptions && pciReady && argumentsReady && diagnosticsIdle;
 			uint64_t preflight[] {2,topologyReady,edramReady,bootstrapReady,
 				static_cast<uint32_t>(planStatus),plan.pipe,bootDDI,alternatePipe,pipeReady,prefix,
-				apertureReady,pageReady,physicalOptions,pciReady,argumentsReady,diagnosticsIdle,adlnNativeReady};
+				apertureReady,pageReady,physicalOptions,pciReady,argumentsReady,diagnosticsIdle,adlnPanelObservation,adlnNativeReady};
 			pci->setProperty("N97NativePreflightDetail",preflight,sizeof(preflight));
 			pci->setProperty("N97NativePreflight",adlnNativeReady);
 			pci->setProperty("N97NativeReservedGGTT",prefix);

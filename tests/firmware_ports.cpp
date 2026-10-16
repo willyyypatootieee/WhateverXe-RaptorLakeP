@@ -57,7 +57,11 @@ int main(int argc,char **argv){
   auto a=parse(adl.data(),adl.size(),Family::AlderLakeN);assert(a.valid()&&a.present==0xB&&a.hdmi(3).hdmi==3);
   auto p=parse(adl.data(),adl.size(),Family::AlderLakeP);assert(p.valid()&&p.present==0xB&&p.hdmi(3).hdmi==3);
   assert(ddi(Family::TigerLake,9)==3&&ddi(Family::AlderLakeN,13)==3&&ddi(Family::AlderLakeP,13)==3&&ddi(Family::AlderLakeN,19)==6);
- assert(ddi(Family::AlderLakeN,9)==PortCount&&ddi(Family::TigerLake,8)==PortCount);
+  assert(ddi(Family::AlderLakeN,9)==PortCount&&ddi(Family::TigerLake,8)==PortCount);
+  auto panel=table({{0x1806,10,3,0x40,0xc0,0},{0x68c6,13,3,0x60,0xc0,3}});
+  auto panelPorts=parse(panel.data(),panel.size(),Family::AlderLakeP);auto route=panelPorts.internalPanel();
+  assert(route.valid&&route.ddi==0&&route.ddc==3&&route.aux==0x40);
+  panelPorts.port[0].aux=0x41;assert(!panelPorts.internalPanel().valid);
  for(auto p:{Port{0x60d6,1,2},Port{0x78c6,10,1},Port{0x60d2,1,2,0,4},Port{0x60d2,1,2,0,2},Port{0x60d2,1,2,0,0,1}}){
   auto b=table({p});auto q=parse(b.data(),b.size(),Family::TigerLake);assert(q.valid()&&!q.hdmi(3).hdmi);
  }

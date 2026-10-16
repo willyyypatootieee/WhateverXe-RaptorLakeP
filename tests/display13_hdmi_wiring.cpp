@@ -1,6 +1,7 @@
 #include <cassert>
 #include <cstdio>
 #include "kern_display13_fb_topology.hpp"
+#include "kern_vbt.hpp"
 using namespace Display13FBTopology;
 int main() {
     for(unsigned mask=1;mask<=7;++mask) {
@@ -20,5 +21,7 @@ int main() {
     const auto w=Display13HDMIWiring::fromProperty(t8,sizeof(t8));
     assert(supportedWiring(w) && bootDDI(w,0x88030000)==0 && bootDDI(w,0x90030000)==1);
     assert(bootDDI(w,0xA0030000)==UINT32_MAX); // T8 rear TC1 GOP must not be adopted.
+    assert(panelBootDDI(true,0,true,1,1,0x88030000)==0);
+    assert(panelBootDDI(true,0,true,1,1,0x90030000)==UINT32_MAX);
     puts("PASS Combo-only HDMI: version1 A/B retained; Combo C not physically admitted; retired TC HDMI/version2 rejected.");
 }
